@@ -8,6 +8,11 @@
         body { margin: 0; padding: 20px; background: #000; color: #fff; font-family: Arial, sans-serif; display: flex; flex-direction: column; align-items: center; }
         #canvas { border: 1px solid #333; background: #000; cursor: grab; touch-action: none; }
         #canvas:active { cursor: grabbing; }
+        /* Fullscreen shows only the stage: the canvas centered on black,
+           resized by resizeCanvas() to fill the screen at a 2:1 aspect. */
+        #stage { display: flex; align-items: center; justify-content: center; background: #000; }
+        #stage:fullscreen #canvas { border: none; }
+        #stage:-webkit-full-screen #canvas { border: none; }
         .controls { margin-top: 20px; text-align: center; display: flex; flex-direction: column; gap: 10px; }
         .sliders { margin-top: 20px; display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; max-width: 900px; }
         .slider-control { display: flex; flex-direction: column; align-items: center; }
@@ -47,7 +52,7 @@
     <h1>4D Polytope Rotation</h1>
 
     <div class="polytope-selector">
-        <label for="polytopeSelect">Polytope:</label>
+        <label for="polytopeSelect">Polytope (← →):</label>
         <select id="polytopeSelect" onchange="changePolytope()">
             <option value="5cell">5-Cell (Pentachoron)</option>
             <option value="tesseract" selected>8-Cell (Tesseract)</option>
@@ -65,42 +70,45 @@
         </select>
     </div>
 
-    <canvas id="canvas" width="1200" height="600"></canvas>
+    <div id="stage"><canvas id="canvas" width="1200" height="600"></canvas></div>
 
     <div class="controls">
+        <!-- data-key: keyboard shortcut for the button. The shortcut is shown
+             in the button label and handled in setupKeyboard(). -->
         <div class="button-group">
-            <button onclick="toggleRotation()">Pause/Resume</button>
-            <button onclick="resetRotation()">Reset Rotation</button>
+            <button onclick="toggleRotation()" data-key="Space">Pause/Resume</button>
+            <button onclick="resetRotation()" data-key="r">Reset Rotation</button>
             <button onclick="stopAllRotation()">Stop All Speeds</button>
             <button onclick="resetSliders()">Reset Speeds</button>
+            <button onclick="toggleFullscreen()" data-key="f">Fullscreen</button>
         </div>
         <div class="button-group">
-            <button onclick="toggleCellHighlight()" id="cellHighlightBtn">Cell Highlighting: OFF</button>
+            <button onclick="toggleCellHighlight()" id="cellHighlightBtn" data-key="c">Cell Highlighting: OFF</button>
             <button onclick="toggleSingleCellMode()" id="singleCellBtn" disabled>Single Cell: OFF</button>
-            <select onchange="changeDecomposition()" id="decompositionSelect" class="decomp-select" disabled>
+            <select onchange="changeDecomposition()" id="decompositionSelect" class="decomp-select" disabled title="D cycles through the decompositions">
                 <option value="off">Decomposition: None</option>
             </select>
-            <button onclick="toggleProjection3D()" id="projection3DBtn">3D Projection: OFF</button>
-            <button onclick="toggleAxesView()" id="axesBtn">Axes: OFF</button>
-            <button onclick="toggleHexachromatic()" id="hexachromaticBtn">Hexachromatic: OFF</button>
-            <button onclick="toggleGradients()" id="gradientsBtn">Gradients: OFF</button>
-            <button onclick="toggleLattice()" id="latticeBtn">Lattice: OFF</button>
-            <button onclick="toggleTrails()" id="trailsBtn">Trails: OFF</button>
-            <button onclick="toggleSpeedMutation()" id="mutationBtn">Speed Mutation: OFF</button>
-            <button onclick="toggleProjectionMode()" id="projectionBtn">Orthographic: OFF</button>
-            <button onclick="toggleSphereMode()" id="sphereBtn">3-Sphere View: OFF</button>
+            <button onclick="toggleProjection3D()" id="projection3DBtn" data-key="p">3D Projection: OFF</button>
+            <button onclick="toggleAxesView()" id="axesBtn" data-key="a">Axes: OFF</button>
+            <button onclick="toggleHexachromatic()" id="hexachromaticBtn" data-key="h">Hexachromatic: OFF</button>
+            <button onclick="toggleGradients()" id="gradientsBtn" data-key="g">Gradients: OFF</button>
+            <button onclick="toggleLattice()" id="latticeBtn" data-key="l">Lattice: OFF</button>
+            <button onclick="toggleTrails()" id="trailsBtn" data-key="t">Trails: OFF</button>
+            <button onclick="toggleSpeedMutation()" id="mutationBtn" data-key="m">Speed Mutation: OFF</button>
+            <button onclick="toggleProjectionMode()" id="projectionBtn" data-key="o">Orthographic: OFF</button>
+            <button onclick="toggleSphereMode()" id="sphereBtn" data-key="s">3-Sphere View: OFF</button>
         </div>
     </div>
     <div class="sliders">
         <div class="slider-control">
             <label for="speedXY">XY Plane Rotation</label>
-            <input type="range" id="speedXY" min="-20" max="20" value="8" step="1">
-            <div class="value" id="valueXY">0.008</div>
+            <input type="range" id="speedXY" min="-20" max="20" value="2" step="1">
+            <div class="value" id="valueXY">0.002</div>
         </div>
         <div class="slider-control">
             <label for="speedXZ">XZ Plane Rotation</label>
-            <input type="range" id="speedXZ" min="-20" max="20" value="6" step="1">
-            <div class="value" id="valueXZ">0.006</div>
+            <input type="range" id="speedXZ" min="-20" max="20" value="3" step="1">
+            <div class="value" id="valueXZ">0.003</div>
         </div>
         <div class="slider-control">
             <label for="speedXW">XW Plane Rotation</label>
@@ -119,8 +127,8 @@
         </div>
         <div class="slider-control">
             <label for="speedZW">ZW Plane Rotation</label>
-            <input type="range" id="speedZW" min="-20" max="20" value="12" step="1">
-            <div class="value" id="valueZW">0.012</div>
+            <input type="range" id="speedZW" min="-20" max="20" value="5" step="1">
+            <div class="value" id="valueZW">0.005</div>
         </div>
     </div>
 
@@ -141,7 +149,9 @@
         <p><strong>Lattice tiling:</strong> Tesseract, 16-cell, and 24-cell tile 4D space. Shows the center plus every neighbor sharing a cell with it (8 for the tesseract, 16 for the 16-cell, 24 for the 24-cell), each obtained by reflecting the center polytope through that shared cell.</p>
         <p><strong>Hexachromatic:</strong> Stereoscopic 2D color space. Left eye colors by angle in XZ, right eye by angle in YW. The brain fuses them into a unique color per S³ point.</p>
         <p><strong>3-Sphere view:</strong> Stereographic projection from S³ to R³. Geodesics become circular arcs.</p>
-        <p><strong>Mouse / touch:</strong> Drag in left window for XY/XZ (shift: XZ/XW), in right window for YZ/YW (shift: YW/ZW). Rotations act in the fixed viewing frame. Wheel to zoom. Space pauses.</p>
+        <p><strong>Fullscreen:</strong> F, the Fullscreen button, or a double-click on the picture shows only the two images, filling the screen; mouse and keys keep working, and the cursor hides when idle. F, Esc or a double-click leaves it.</p>
+        <p><strong>Mouse / touch:</strong> Drag in left window for XY/XZ (shift: XZ/XW), in right window for YZ/YW (shift: YW/ZW). Rotations act in the fixed viewing frame. Wheel to zoom.</p>
+        <p><strong>Keyboard:</strong> Space pause/resume, R reset rotation, F fullscreen, ← → previous/next polytope, D next decomposition, C cell highlighting, P 3D projection, A axes, H hexachromatic, G gradients, L lattice, T trails, M speed mutation, O orthographic, S 3-sphere view. Shortcuts are also shown on the buttons.</p>
     </div>
 
     <script>
@@ -153,7 +163,7 @@
     const ctx = canvas.getContext('2d');
 
     // Logical canvas size. The backing store is scaled by devicePixelRatio
-    // (see setupHiDPI) so lines stay crisp on high-density displays; all
+    // (see resizeCanvas) so lines stay crisp on high-density displays; all
     // drawing code works in these logical units.
     const CANVAS_W = 1200;
     const CANVAS_H = 600;
@@ -252,11 +262,13 @@
     let orientation4D = identityMatrix4();      // row-major 4×4
     let orientation3D = initialOrientation3D(); // row-major 3×3 (3D projection mode)
 
-    let speedXY = 0.008, speedXZ = 0.006, speedXW = 0;
-    let speedYZ = 0,     speedYW = 0,     speedZW = 0.012;
+    let speedXY = 0.002, speedXZ = 0.003, speedXW = 0;
+    let speedYZ = 0,     speedYW = 0,     speedZW = 0.005;
 
-    let baseSpeedXY = 8, baseSpeedXZ = 6, baseSpeedXW = 0;
-    let baseSpeedYZ = 0, baseSpeedYW = 0, baseSpeedZW = 12;
+    // Slider units: thousandths of a radian per 60 Hz frame.
+    const DEFAULT_SPEEDS = { XY: 2, XZ: 3, XW: 0, YZ: 0, YW: 0, ZW: 5 };
+    let baseSpeedXY = DEFAULT_SPEEDS.XY, baseSpeedXZ = DEFAULT_SPEEDS.XZ, baseSpeedXW = DEFAULT_SPEEDS.XW;
+    let baseSpeedYZ = DEFAULT_SPEEDS.YZ, baseSpeedYW = DEFAULT_SPEEDS.YW, baseSpeedZW = DEFAULT_SPEEDS.ZW;
 
     let projection3DEnabled = false;
     let projection3DAxis = [0, 0, 0, 1];
@@ -2537,18 +2549,22 @@
         drawEye(frame, EYE_LEFT_X,  -STEREO_OFFSET, 'left');
         drawEye(frame, EYE_RIGHT_X,  STEREO_OFFSET, 'right');
 
-        ctx.strokeStyle = '#333';
-        ctx.lineWidth = 1;
-        ctx.beginPath();
-        ctx.moveTo(HALF_W, 0);
-        ctx.lineTo(HALF_W, CANVAS_H);
-        ctx.stroke();
+        // Divider and labels are left out in fullscreen (polytope only).
+        if (!isFullscreen()) {
+            ctx.strokeStyle = '#333';
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.moveTo(HALF_W, 0);
+            ctx.lineTo(HALF_W, CANVAS_H);
+            ctx.stroke();
+        }
 
         drawDragLabels();
     }
 
     // Drag-mapping hints, kept in sync with the pointer handler.
     function drawDragLabels() {
+        if (isFullscreen()) return;   // fullscreen shows the polytope only
         ctx.font = '12px Arial';
         ctx.textAlign = 'center';
         if (projection3DEnabled) {
@@ -2652,8 +2668,15 @@
 
     function setToggleButton(btnId, isOn, labelBase) {
         const btn = document.getElementById(btnId);
-        btn.textContent = `${labelBase}: ${isOn ? 'ON' : 'OFF'}`;
+        btn.textContent = `${labelBase}: ${isOn ? 'ON' : 'OFF'}${shortcutSuffix(btn)}`;
         btn.classList.toggle('active', isOn);
+    }
+
+    // " (F)", " (Space)" … for buttons with a data-key shortcut, else "".
+    function shortcutSuffix(btn) {
+        const k = btn.dataset.key;
+        if (!k) return '';
+        return ` (${k.length === 1 ? k.toUpperCase() : k})`;
     }
 
     function toggleRotation() { isRotating = !isRotating; }
@@ -2664,7 +2687,7 @@
     }
 
     function resetSliders() {
-        const defaults = { XY: 8, XZ: 6, XW: 0, YZ: 0, YW: 0, ZW: 12 };
+        const defaults = DEFAULT_SPEEDS;
         baseSpeedXY = defaults.XY; baseSpeedXZ = defaults.XZ; baseSpeedXW = defaults.XW;
         baseSpeedYZ = defaults.YZ; baseSpeedYW = defaults.YW; baseSpeedZW = defaults.ZW;
         for (const axis of ['XY', 'XZ', 'XW', 'YZ', 'YW', 'ZW']) {
@@ -2875,19 +2898,73 @@
         }
     }
 
+    // Keys of the form produced by keyName(): a lowercase letter, "Space",
+    // or a named key such as "ArrowLeft". Using e.key (not e.code) means
+    // letters follow the active keyboard layout, e.g. on QWERTZ.
+    function keyName(e) {
+        if (e.code === 'Space') return 'Space';
+        return e.key.length === 1 ? e.key.toLowerCase() : e.key;
+    }
+
+    function stepPolytope(delta) {
+        const select = document.getElementById('polytopeSelect');
+        const n = select.options.length;
+        select.selectedIndex = (select.selectedIndex + delta + n) % n;
+        changePolytope();
+    }
+
+    function cycleDecomposition() {
+        const select = document.getElementById('decompositionSelect');
+        if (select.disabled) return;
+        select.selectedIndex = (select.selectedIndex + 1) % select.options.length;
+        changeDecomposition();
+    }
+
     function setupKeyboard() {
+        // Shortcuts on buttons come from their data-key attribute, so the
+        // label and the handler can't drift apart.
+        document.querySelectorAll('button[data-key]').forEach(btn => {
+            if (!btn.id) btn.textContent += shortcutSuffix(btn);   // toggles: setToggleButton
+            else         btn.textContent = btn.textContent.replace(/( \(.*\))?$/, shortcutSuffix(btn));
+        });
+
+        const extraKeys = {
+            ArrowLeft:  () => stepPolytope(-1),
+            ArrowRight: () => stepPolytope(+1),
+            d:          cycleDecomposition
+        };
+
         document.addEventListener('keydown', e => {
-            if (e.key === 'Shift') shiftPressed = true;
-            // Space pauses - unless a control has focus, where Space already
-            // activates that control.
-            if (e.code === 'Space' && !e.target.closest('button, select, input')) {
+            if (e.key === 'Shift') { shiftPressed = true; return; }
+            if (e.ctrlKey || e.metaKey || e.altKey || e.repeat) return;   // leave browser shortcuts alone
+            // In a dropdown or text field, keys belong to that control.
+            if (e.target.closest('select, input')) return;
+            const name = keyName(e);
+            // Space on a focused button (keyboard navigation) activates it.
+            if (name === 'Space' && e.target.closest('button')) return;
+
+            const btn = document.querySelector(`button[data-key="${name}"]`);
+            if (btn) {
                 e.preventDefault();
-                toggleRotation();
+                if (!btn.disabled) btn.click();
+            } else if (extraKeys[name]) {
+                e.preventDefault();
+                extraKeys[name]();
             }
         });
         document.addEventListener('keyup', e => { if (e.key === 'Shift') shiftPressed = false; });
         // Releasing Shift while the window is unfocused never fires keyup.
         window.addEventListener('blur', () => { shiftPressed = false; });
+
+        // A mouse click would leave the button or dropdown focused, and the
+        // next Space / letter / arrow key would go to it instead of being a
+        // shortcut. Keyboard activation (detail 0) keeps focus for tabbing.
+        document.addEventListener('click', e => {
+            const btn = e.target.closest('button');
+            if (btn && e.detail > 0) btn.blur();
+        });
+        document.querySelectorAll('select').forEach(sel =>
+            sel.addEventListener('change', () => sel.blur()));
     }
 
     // Pointer events cover mouse, pen and touch. The pointer is captured, so a
@@ -2941,21 +3018,78 @@
         }, { passive: false });
     }
 
-    // Render at device resolution; drawing code keeps using logical units.
-    function setupHiDPI() {
+    // --- Fullscreen ---
+    //
+    // The stage (canvas wrapper) goes fullscreen, so the controls and text
+    // below the canvas are hidden while mouse dragging and zoom keep working.
+    // The prefixed calls cover older Safari.
+    const stage = document.getElementById('stage');
+
+    function isFullscreen() {
+        return (document.fullscreenElement || document.webkitFullscreenElement) === stage;
+    }
+
+    function toggleFullscreen() {
+        if (isFullscreen()) {
+            (document.exitFullscreen || document.webkitExitFullscreen).call(document);
+        } else {
+            (stage.requestFullscreen || stage.webkitRequestFullscreen).call(stage);
+        }
+    }
+
+    // Sizes the canvas for the current mode and renders at device resolution.
+    // Drawing code always works in the logical CANVAS_W × CANVAS_H units; in
+    // fullscreen the whole picture is scaled up uniformly to the largest 2:1
+    // rectangle that fits the screen, and the backing store matches that
+    // size, so it stays sharp rather than being stretched.
+    function resizeCanvas() {
+        const fit = isFullscreen()
+            ? Math.min(window.innerWidth / CANVAS_W, window.innerHeight / CANVAS_H)
+            : 1;
         const dpr = window.devicePixelRatio || 1;
-        canvas.width = Math.round(CANVAS_W * dpr);
-        canvas.height = Math.round(CANVAS_H * dpr);
-        canvas.style.width = CANVAS_W + 'px';
-        canvas.style.height = CANVAS_H + 'px';
-        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        const cssW = Math.floor(CANVAS_W * fit), cssH = Math.floor(CANVAS_H * fit);
+        canvas.width = Math.round(cssW * dpr);
+        canvas.height = Math.round(cssH * dpr);
+        canvas.style.width = cssW + 'px';
+        canvas.style.height = cssH + 'px';
+        const k = (cssW / CANVAS_W) * dpr;
+        ctx.setTransform(k, 0, 0, k, 0, 0);
+    }
+
+    // In fullscreen the cursor hides after a moment without movement and
+    // reappears on the next movement.
+    const CURSOR_HIDE_DELAY_MS = 2000;
+    let cursorHideTimer = null;
+
+    function wakeCursor() {
+        canvas.style.cursor = '';
+        clearTimeout(cursorHideTimer);
+        if (isFullscreen()) {
+            cursorHideTimer = setTimeout(() => {
+                if (isFullscreen() && !isDragging) canvas.style.cursor = 'none';
+            }, CURSOR_HIDE_DELAY_MS);
+        }
+    }
+
+    function onFullscreenChange() {
+        resizeCanvas();
+        wakeCursor();
+    }
+
+    function setupCanvasSizing() {
+        resizeCanvas();
+        document.addEventListener('fullscreenchange', onFullscreenChange);
+        document.addEventListener('webkitfullscreenchange', onFullscreenChange);
+        window.addEventListener('resize', resizeCanvas);
+        canvas.addEventListener('pointermove', wakeCursor);
+        canvas.addEventListener('dblclick', toggleFullscreen);
     }
 
     // =========================================================================
     // Initialization
     // =========================================================================
 
-    setupHiDPI();
+    setupCanvasSizing();
     initializePolytope('tesseract');
     updateDecompositionDropdown();
     refreshCellUI();

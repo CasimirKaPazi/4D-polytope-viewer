@@ -40,7 +40,21 @@ tau distance.
 - Drag in the left half to rotate in XY/XZ, in the right half for YZ/YW;
   hold Shift for XZ/XW and YW/ZW
 - Mouse wheel zooms
-- Space pauses and resumes the rotation
+- Fullscreen (F, or double-click the picture) shows only the two images;
+  F, Esc or a double-click leaves it
+
+Keyboard shortcuts (also shown on the buttons):
+
+| Key | Action | Key | Action |
+|---|---|---|---|
+| Space | pause / resume | R | reset rotation |
+| F | fullscreen | ← → | previous / next polytope |
+| D | next decomposition | C | cell highlighting |
+| P | 3D projection | A | axes |
+| H | hexachromatic | G | gradients |
+| L | lattice | T | trails |
+| M | speed mutation | O | orthographic |
+| S | 3-sphere view | | |
 
 ## License
 
