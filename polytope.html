@@ -1549,11 +1549,14 @@
     // fade visible during animation.
     const HEX_POLE_EPSILON_SQ = 0.0225;   // ε² with ε = 0.15
 
+    // v_4d arrives transformed, i.e. multiplied by the zoom factor `scale`
+    // (it is part of the transform matrix). Colors must not change with
+    // zoom, so coordinates are divided by `scale` before use.
     function hueForEndpoint(v_4d, vertexClassification, eyeSide) {
         if (hexachromaticMode) {
             let c1, c2;
-            if (eyeSide === 'left') { c1 = v_4d[0]; c2 = v_4d[2]; }
-            else                    { c1 = v_4d[1]; c2 = v_4d[3]; }
+            if (eyeSide === 'left') { c1 = v_4d[0] / scale; c2 = v_4d[2] / scale; }
+            else                    { c1 = v_4d[1] / scale; c2 = v_4d[3] / scale; }
             const rSq = c1 * c1 + c2 * c2;
             const sat = rSq / (rSq + HEX_POLE_EPSILON_SQ);
             // light: 0.5 at full saturation, → 1 (white) at the pole
@@ -1564,7 +1567,7 @@
         if (projection3DEnabled && polytope.type === '24cell' && vertexClassification) {
             return { hue: PROJ_DECOMP_COLORS[vertexClassification]?.hue || 0, sat: 1, light: 0.5 };
         }
-        return { hue: wToHue(v_4d[3]), sat: 1, light: 0.5 };
+        return { hue: wToHue(v_4d[3] / scale), sat: 1, light: 0.5 };
     }
 
     // =========================================================================
@@ -2123,9 +2126,10 @@
     }
 
     // Smooth depth cue in [0, 1]: 0.5 at z = 0, → 1 toward the eye (z > 0),
-    // → 0 away from it.
+    // → 0 away from it. z is in zoomed units; dividing by `scale` keeps the
+    // brightness pattern independent of the zoom level.
     function depthCue(z) {
-        return 0.5 + 0.5 * Math.tanh(z / DEPTH_CUE_RANGE);
+        return 0.5 + 0.5 * Math.tanh(z / (scale * DEPTH_CUE_RANGE));
     }
 
     function hslaString(hue, sat, light, alpha) {
@@ -2197,7 +2201,7 @@
     function recordTrailFrame(verts3D, transformedVerts) {
         const byHue = new Map();
         for (let i = 0; i < transformedVerts.length; i++) {
-            const hue = Math.round(wToHue(transformedVerts[i][3]) / HUE_BUCKET_DEG) * HUE_BUCKET_DEG;
+            const hue = Math.round(wToHue(transformedVerts[i][3] / scale) / HUE_BUCKET_DEG) * HUE_BUCKET_DEG;
             let list = byHue.get(hue);
             if (!list) { list = []; byHue.set(hue, list); }
             list.push(i);
