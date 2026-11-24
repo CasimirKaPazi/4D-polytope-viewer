@@ -1,0 +1,2604 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>4D Polytope Rotation & 3-Sphere View</title>
+    <style>
+        body { margin: 0; padding: 20px; background: #000; color: #fff; font-family: Arial, sans-serif; display: flex; flex-direction: column; align-items: center; }
+        #canvas { border: 1px solid #333; background: #000; cursor: grab; }
+        #canvas:active { cursor: grabbing; }
+        .controls { margin-top: 20px; text-align: center; display: flex; flex-direction: column; gap: 10px; }
+        .sliders { margin-top: 20px; display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; max-width: 900px; }
+        .slider-control { display: flex; flex-direction: column; align-items: center; }
+        .slider-control label { margin-bottom: 5px; font-weight: bold; }
+        .slider-control input[type="range"] { width: 250px; }
+        .slider-control .value { margin-top: 5px; font-size: 12px; color: #aaa; }
+        .info { margin-top: 20px; font-size: 14px; color: #aaa; max-width: 900px; line-height: 1.6; }
+        .info p { margin: 10px 0; }
+        .info strong { color: #ddd; }
+        .cell-legend { margin-top: 15px; padding: 20px; background: rgba(40, 40, 40, 0.9); border-radius: 8px; border: 1px solid #444; display: none; max-width: 900px; }
+        .cell-legend.active { display: block; }
+        .cell-legend h3 { margin: 0 0 15px 0; font-size: 16px; color: #fff; text-align: center; border-bottom: 1px solid #555; padding-bottom: 10px; }
+        .cell-legend-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; }
+        .cell-item { display: flex; align-items: center; gap: 8px; }
+        .cell-color { width: 30px; height: 16px; border-radius: 3px; border: 1px solid rgba(255, 255, 255, 0.3); }
+        button { margin: 5px; padding: 10px 18px; background: #2a2a2a; color: #ddd; border: 2px solid #555; cursor: pointer; border-radius: 6px; font-size: 14px; font-weight: 500; transition: all 0.2s; }
+        button:hover { background: #333; border-color: #666; transform: translateY(-1px); }
+        button.active { background: #0a4a0a; border-color: #0a8a0a; color: #8f8; }
+        button.active:hover { background: #0c5c0c; border-color: #0c9c0c; }
+        button:disabled { background: #222; border-color: #444; color: #666; cursor: not-allowed; }
+        button:disabled:hover { background: #222; }
+        select { padding: 12px 20px; background: #2a2a2a; color: #fff; border: 2px solid #555; border-radius: 6px; font-size: 15px; font-weight: 500; cursor: pointer; min-width: 250px; transition: all 0.2s; }
+        select:hover { background: #333; border-color: #666; }
+        select:focus { outline: none; border-color: #0a8a0a; box-shadow: 0 0 0 2px rgba(10, 138, 10, 0.2); }
+        select.decomp-select { margin: 5px; padding: 10px 18px; font-size: 14px; font-weight: 500; min-width: 240px; color: #ddd; }
+        select.decomp-select.active { background: #0a4a0a; border-color: #0a8a0a; color: #8f8; }
+        select.decomp-select:disabled { background: #222; border-color: #444; color: #666; cursor: not-allowed; }
+        label { color: #ccc; font-size: 14px; font-weight: 500; }
+        .polytope-selector { display: flex; align-items: center; justify-content: center; gap: 12px; margin: 15px 0; }
+        .button-group { display: flex; justify-content: center; gap: 5px; flex-wrap: wrap; align-items: center; }
+    </style>
+</head>
+<body>
+    <h1>4D Polytope Rotation</h1>
+
+    <div class="polytope-selector">
+        <label for="polytopeSelect">Polytope:</label>
+        <select id="polytopeSelect" onchange="changePolytope()">
+            <option value="5cell">5-Cell (Pentachoron)</option>
+            <option value="tesseract" selected>8-Cell (Tesseract)</option>
+            <option value="16cell">16-Cell (Hexadecachoron)</option>
+            <option value="24cell">24-Cell (Icositetrachoron)</option>
+            <option value="288cell">Disphenoidal 288-Cell (F₄ root system)</option>
+            <option value="48cell">48-Cell (Bitruncated 24-Cell, dual of 288-cell)</option>
+            <option value="600cell">600-Cell (Hexacosichoron)</option>
+            <option value="120cell">120-Cell (Dodecaplex, dual of 600-cell)</option>
+            <option value="snub24cell">Snub 24-Cell (96 verts, non-Wythoffian)</option>
+            <option value="e8projection">E8 Projection (240 verts, two 600-cells at φ ratio)</option>
+            <option value="a4root">A4 Root Polytope (20 verts, S5 symmetry)</option>
+            <option value="b4root">B4/C4 Root Polytope (32 verts: 24-cell + 16-cell)</option>
+        </select>
+    </div>
+
+    <canvas id="canvas" width="1200" height="600"></canvas>
+
+    <div class="controls">
+        <div class="button-group">
+            <button onclick="toggleRotation()">Pause/Resume</button>
+            <button onclick="resetRotation()">Reset Rotation</button>
+            <button onclick="stopAllRotation()">Stop All Speeds</button>
+            <button onclick="resetSliders()">Reset Speeds</button>
+        </div>
+        <div class="button-group">
+            <button onclick="toggleCellHighlight()" id="cellHighlightBtn">Cell Highlighting: OFF</button>
+            <button onclick="toggleSingleCellMode()" id="singleCellBtn" disabled>Single Cell: OFF</button>
+            <select onchange="changeDecomposition()" id="decompositionSelect" class="decomp-select" disabled>
+                <option value="off">Decomposition: None</option>
+            </select>
+            <button onclick="toggleProjection3D()" id="projection3DBtn">3D Projection: OFF</button>
+            <button onclick="toggleAxesView()" id="axesBtn">Axes: OFF</button>
+            <button onclick="toggleHexachromatic()" id="hexachromaticBtn">Hexachromatic: OFF</button>
+            <button onclick="toggleGradients()" id="gradientsBtn">Gradients: OFF</button>
+            <button onclick="toggleLattice()" id="latticeBtn">Lattice: OFF</button>
+            <button onclick="toggleTrails()" id="trailsBtn">Trails: OFF</button>
+            <button onclick="toggleSpeedMutation()" id="mutationBtn">Speed Mutation: OFF</button>
+            <button onclick="toggleProjectionMode()" id="projectionBtn">Orthographic: OFF</button>
+            <button onclick="toggleSphereMode()" id="sphereBtn">3-Sphere View: OFF</button>
+        </div>
+    </div>
+    <div class="sliders">
+        <div class="slider-control">
+            <label for="speedXY">XY Plane Rotation</label>
+            <input type="range" id="speedXY" min="-20" max="20" value="8" step="1">
+            <div class="value" id="valueXY">0.008</div>
+        </div>
+        <div class="slider-control">
+            <label for="speedXZ">XZ Plane Rotation</label>
+            <input type="range" id="speedXZ" min="-20" max="20" value="6" step="1">
+            <div class="value" id="valueXZ">0.006</div>
+        </div>
+        <div class="slider-control">
+            <label for="speedXW">XW Plane Rotation</label>
+            <input type="range" id="speedXW" min="-20" max="20" value="0" step="1">
+            <div class="value" id="valueXW">0.000</div>
+        </div>
+        <div class="slider-control">
+            <label for="speedYZ">YZ Plane Rotation</label>
+            <input type="range" id="speedYZ" min="-20" max="20" value="0" step="1">
+            <div class="value" id="valueYZ">0.000</div>
+        </div>
+        <div class="slider-control">
+            <label for="speedYW">YW Plane Rotation</label>
+            <input type="range" id="speedYW" min="-20" max="20" value="0" step="1">
+            <div class="value" id="valueYW">0.000</div>
+        </div>
+        <div class="slider-control">
+            <label for="speedZW">ZW Plane Rotation</label>
+            <input type="range" id="speedZW" min="-20" max="20" value="12" step="1">
+            <div class="value" id="valueZW">0.012</div>
+        </div>
+    </div>
+
+    <div class="cell-legend" id="cellLegend">
+        <h3 id="cellLegendTitle">8 Cubic Cells</h3>
+        <div class="cell-legend-grid" id="cellLegendGrid"></div>
+    </div>
+
+    <div class="info">
+        <p><strong>Polytope selection:</strong> Choose between the four convex regular 4D polytopes.</p>
+        <p><strong>How to view:</strong> Cross your eyes until the two images merge into one central 3D image.</p>
+        <p><strong>Decompositions:</strong> Ways the active polytope splits into smaller regular polytopes. 24-cell offers triality (3 disjoint 16-cells), 16-cell + tesseract, and 3 overlapping tesseracts. Tesseract offers 2 inscribed 16-cells (alternating vertex parity). 16-cell offers 2 inscribed tetrahedra. The polytope's own edges go gray; the decomposition's groups appear in distinct hues. When groups overlap, vertex colors blend - the 3-tesseract case gives the three secondary colors (yellow, cyan, magenta), each marking a specific pair of tesseracts.</p>
+        <p><strong>Cell highlighting:</strong> Visualizes the 3D cells forming each polytope's boundary. Single cell mode picks one cell when there are many.</p>
+        <p><strong>3D Projection:</strong> Projects the 4D polytope onto a 3D hyperplane (W axis, or (1,1,0,0) for the 24-cell), then rotates the result in 3D. For the 24-cell this shows the decomposition 24 = 2 + 6 + 8 + 8 relative to the chosen axis.</p>
+        <p><strong>Axes view:</strong> Draws the four 4D coordinate axes through the origin (red X, yellow-green Y, cyan Z, purple W).</p>
+        <p><strong>Lattice tiling:</strong> Tesseract, 16-cell, and 24-cell tile 4D space. Shows the center plus 8 face-adjacent neighbors at spacing 2.</p>
+        <p><strong>Hexachromatic:</strong> Stereoscopic 2D color space. Left eye colors by angle in XZ, right eye by angle in YW. The brain fuses them into a unique color per S³ point.</p>
+        <p><strong>3-Sphere view:</strong> Stereographic projection from S³ to R³. Geodesics become circular arcs.</p>
+        <p><strong>Mouse:</strong> Drag in left window for XY/XZ (shift: XZ/XW), in right window for YZ/YW (shift: YW/ZW). Wheel to zoom.</p>
+    </div>
+
+    <script>
+    // =========================================================================
+    // 4D Polytope Viewer
+    // =========================================================================
+
+    const canvas = document.getElementById('canvas');
+    const ctx = canvas.getContext('2d');
+
+    // -------------------------------------------------------------------------
+    // Constants
+    // -------------------------------------------------------------------------
+
+    const VIEWING_DISTANCE_4D = 3.0;
+    const VIEWING_DISTANCE_3D = 4;
+    const NEAR_PLANE_Z = 3.5;
+    const STEREO_OFFSET = 0.15;
+    const EYE_LEFT_X = 300;
+    const EYE_RIGHT_X = 900;
+    const CENTER_Y = 300;
+    const SCREEN_SCALE = 80;
+    const DRAG_SENSITIVITY = 0.005;
+    const MAX_TRAIL_LENGTH = 50;
+    const MUTATION_SPEED = 0.002;
+    const MUTATION_AMPLITUDE = 10;
+    const MUTATION_FADE_IN_DURATION = 3.0;
+    const EDGE_THICKNESS = 1.5;
+    const SPHERE_ARC_SEGMENTS = 16;
+    const SPHERE_PROJECTION_SCALE = 0.5;
+
+    const HUE_BUCKET_DEG = 12;
+    const ALPHA_BUCKET_LEVELS = 5;
+    const MIN_VISIBLE_ALPHA = 0.05;
+
+    const AXES_HUES = [0, 90, 180, 270];
+    const PROJ_DECOMP_COLORS = {
+        center:     { hue: 60,  name: 'Center (±α)' },
+        octahedron: { hue: 0,   name: 'Octahedron (D₃)' },
+        cube1:      { hue: 120, name: 'Cube S⁺' },
+        cube2:      { hue: 240, name: 'Cube S⁻' }
+    };
+
+    const AXIS_LATTICE_OFFSETS = [
+        [0, 0, 0, 0],
+        [ 2, 0, 0, 0], [-2, 0, 0, 0],
+        [0,  2, 0, 0], [0, -2, 0, 0],
+        [0, 0,  2, 0], [0, 0, -2, 0],
+        [0, 0, 0,  2], [0, 0, 0, -2]
+    ];
+
+    const POLYTOPES_THAT_TILE = new Set(['tesseract', '16cell', '24cell']);
+
+    // -------------------------------------------------------------------------
+    // State
+    // -------------------------------------------------------------------------
+
+    let polytope = null;
+    let latticeGeometry = null;
+    let transformMatrix = identityMatrix4();
+
+    let currentPolytope = 'tesseract';
+    let scale = 1.0;
+    let orthographicMode = false;
+    let sphereMode = false;
+
+    let angleXY = 0, angleXZ = 0, angleXW = 0;
+    let angleYZ = 0, angleYW = 0, angleZW = 0;
+
+    let speedXY = 0.008, speedXZ = 0.006, speedXW = 0;
+    let speedYZ = 0,     speedYW = 0,     speedZW = 0.012;
+
+    let baseSpeedXY = 8, baseSpeedXZ = 6, baseSpeedXW = 0;
+    let baseSpeedYZ = 0, baseSpeedYW = 0, baseSpeedZW = 12;
+
+    let projection3DEnabled = false;
+    let projection3DAxis = [0, 0, 0, 1];
+    let angle3DX = 0, angle3DY = 0, angle3DZ = 0;
+
+    let isRotating = true;
+    let cellHighlightEnabled = false;
+    let singleCellMode = false;
+    let selectedCellIndex = 0;
+    let decompositionMode = 'off';
+    let axesViewEnabled = false;
+    let hexachromaticMode = false;
+    let latticeMode = false;
+    let trailEnabled = false;
+    let speedMutationEnabled = false;
+    let gradientsEnabled = false;
+
+    let trailHistory = [];
+    let mutationTime = 0;
+    let mutationStartTime = 0;
+
+    let isDragging = false;
+    let lastMouseX = 0, lastMouseY = 0;
+    let shiftPressed = false;
+
+    // =========================================================================
+    // Polytope Geometry
+    // =========================================================================
+
+    function squaredDist4D(v1, v2) {
+        return (v1[0]-v2[0])**2 + (v1[1]-v2[1])**2 + (v1[2]-v2[2])**2 + (v1[3]-v2[3])**2;
+    }
+
+    function createTesseractVertices() {
+        const verts = [];
+        for (let x = -1; x <= 1; x += 2)
+            for (let y = -1; y <= 1; y += 2)
+                for (let z = -1; z <= 1; z += 2)
+                    for (let w = -1; w <= 1; w += 2)
+                        verts.push([x, y, z, w]);
+        return verts;
+    }
+
+    function create5CellVertices() {
+        // Regular 5-cell (4-simplex), centered at origin.
+        //
+        // Centroid-at-origin requires the apex z to cancel the four base z's:
+        //   4·(−phi) + apex_z = 0   →   apex_z = 4·phi
+        // With phi = 1/√5, every vertex lies at radius 4·phi = 4/√5 from origin
+        // and every edge has squared length 8 (= 2·(4·phi)²·(1 − cos(arccos(−¼))),
+        // the 5-cell's characteristic vertex-vertex angle).
+        const phi = 1 / Math.sqrt(5);
+        return [
+            [ 1,  1,  1, -phi],
+            [ 1, -1, -1, -phi],
+            [-1,  1, -1, -phi],
+            [-1, -1,  1, -phi],
+            [ 0,  0,  0, 4 * phi]
+        ];
+    }
+
+    function create16CellVertices() {
+        return [
+            [ 1, 0, 0, 0], [-1, 0, 0, 0],
+            [0,  1, 0, 0], [0, -1, 0, 0],
+            [0, 0,  1, 0], [0, 0, -1, 0],
+            [0, 0, 0,  1], [0, 0, 0, -1]
+        ];
+    }
+
+    function create24CellVertices() {
+        const verts = [];
+        const pairs = [[0,1],[0,2],[0,3],[1,2],[1,3],[2,3]];
+        const signs = [[1,1],[1,-1],[-1,1],[-1,-1]];
+        for (const [a, b] of pairs) {
+            for (const [sa, sb] of signs) {
+                const v = [0, 0, 0, 0];
+                v[a] = sa;
+                v[b] = sb;
+                verts.push(v);
+            }
+        }
+        return verts;
+    }
+
+    function createEdgesBySquaredDistance(verts, targetDistSq, tolerance = 0.01) {
+        const result = [];
+        for (let i = 0; i < verts.length; i++)
+            for (let j = i + 1; j < verts.length; j++)
+                if (Math.abs(squaredDist4D(verts[i], verts[j]) - targetDistSq) < tolerance)
+                    result.push([i, j]);
+        return result;
+    }
+
+    function createTesseractEdges(verts) {
+        const result = [];
+        for (let i = 0; i < verts.length; i++) {
+            for (let j = i + 1; j < verts.length; j++) {
+                let diffs = 0;
+                for (let k = 0; k < 4; k++) if (verts[i][k] !== verts[j][k]) diffs++;
+                if (diffs === 1) result.push([i, j]);
+            }
+        }
+        return result;
+    }
+
+    function create5CellEdges(verts) {
+        const result = [];
+        for (let i = 0; i < verts.length; i++)
+            for (let j = i + 1; j < verts.length; j++)
+                result.push([i, j]);
+        return result;
+    }
+
+    const create16CellEdges = verts => createEdgesBySquaredDistance(verts, 2);
+    const create24CellEdges = verts => createEdgesBySquaredDistance(verts, 2);
+
+    // --- Orbit enumeration helper ---
+    //
+    // Many uniform polytopes have vertex coordinates given as "all permutations
+    // and sign changes of a base tuple". generateOrbit returns those vertices,
+    // deduplicating by exact coordinate string so that repeated values in the
+    // base tuple don't create duplicate vertices.
+    //
+    // With evenOnly=true, restricts to the 12 even permutations (the alternating
+    // group A₄). Many uniform 4-polytopes involving the golden ratio (snub
+    // 24-cell, 600-cell, 120-cell, ...) use even-permutation orbits this way.
+    function generateOrbit(baseTuple, evenOnly = false) {
+        const orbit = new Set();
+        const result = [];
+        const perms = [];
+
+        // Track permutation parity through transpositions: each swap of two
+        // distinct positions flips the sign of the parity.
+        function permute(arr, start, sign) {
+            if (start === arr.length) {
+                if (!evenOnly || sign > 0) perms.push([...arr]);
+                return;
+            }
+            for (let i = start; i < arr.length; i++) {
+                [arr[start], arr[i]] = [arr[i], arr[start]];
+                permute(arr, start + 1, i === start ? sign : -sign);
+                [arr[start], arr[i]] = [arr[i], arr[start]];
+            }
+        }
+        permute([0, 1, 2, 3], 0, 1);
+
+        for (const perm of perms) {
+            const permuted = perm.map(i => baseTuple[i]);
+            // 16 sign masks; coords that are zero ignore the bit (so no spurious duplicates)
+            for (let mask = 0; mask < 16; mask++) {
+                const signed = permuted.map((c, i) => {
+                    if (c === 0) return 0;
+                    return ((mask >> i) & 1) ? -c : c;
+                });
+                const key = signed.map(c => c.toFixed(8)).join('_');
+                if (!orbit.has(key)) {
+                    orbit.add(key);
+                    result.push(signed);
+                }
+            }
+        }
+        return result;
+    }
+
+    // --- Bitruncated 24-cell (48-cell) ---
+    //
+    // 288 vertices forming a uniform 4-polytope, dual of the disphenoidal 288-cell.
+    // Edge-transitive, vertex-transitive, cell-transitive (48 truncated cubes).
+    // 576 edges, all the same length; degree 4 at every vertex.
+    //
+    // The qfbox.info canonical coordinates are permutations and sign changes of
+    //   (0, 2+√2, 2+√2, 2+2√2)   → 96 vertices
+    //   (1, 1+√2, 1+√2, 3+2√2)   → 192 vertices
+    // with circumradius √(24+16√2) = 2√2+4 and edge length 2 in that scaling.
+    //
+    // We rescale by (√2-1)/2 so the circumradius becomes √2, matching the
+    // disphenoidal 288-cell (so the duals appear at comparable sizes). In this
+    // scaling, edge length is √2-1 ≈ 0.414 and squared edge length is 3-2√2.
+    function create48CellVertices() {
+        const s = (Math.sqrt(2) - 1) / 2;
+        const r2 = Math.sqrt(2);
+        const baseA = [0, (2 + r2) * s, (2 + r2) * s, (2 + 2 * r2) * s];
+        const baseB = [1 * s, (1 + r2) * s, (1 + r2) * s, (3 + 2 * r2) * s];
+        return [...generateOrbit(baseA), ...generateOrbit(baseB)];
+    }
+
+    function create48CellEdges(verts) {
+        // All edges at squared distance 3 - 2√2 (i.e. edge length √2-1) in our scaling.
+        const edgeSq = 3 - 2 * Math.sqrt(2);
+        return createEdgesBySquaredDistance(verts, edgeSq);
+    }
+
+    // --- 600-cell (hexacosichoron) ---
+    //
+    // The convex regular 4-polytope with Schläfli symbol {3,3,5}. 120 vertices,
+    // 720 edges, 1200 triangular faces, 600 regular tetrahedral cells. The 4D
+    // analogue of the icosahedron — its vertex figure is itself an icosahedron,
+    // with 20 tetrahedra meeting at each vertex.
+    //
+    // Vertices at unit circumradius, edges of length 1/φ:
+    //   - 8 axis vertices: permutations of (±1, 0, 0, 0) — a 16-cell
+    //   - 16 corner vertices: (±½, ±½, ±½, ±½) — a tesseract scaled by ½
+    //     Together these 24 form an inscribed 24-cell (the F₄ short-root form).
+    //   - 96 snub vertices: even permutations of (±φ/2, ±½, ±φ⁻¹/2, 0)
+    //     These on their own form a snub 24-cell.
+    //
+    // The 120 vertices, viewed as unit quaternions, are the binary icosahedral
+    // group 2I — they're closed under quaternion multiplication. The polytope
+    // contains 25 inscribed 24-cells in total (the natural decomposition,
+    // deferred to a later round).
+    //
+    // Edge length squared = 1/φ² = (3−√5)/2 ≈ 0.382. Every vertex has degree 12
+    // (matching the 12 vertices of the icosahedral vertex figure). The 720
+    // edges are arranged into 72 flat regular decagons — one of the polytope's
+    // beautiful structural features.
+    function create600CellVertices() {
+        const phi = (1 + Math.sqrt(5)) / 2;
+        return [
+            ...generateOrbit([1, 0, 0, 0]),                    // 8 axis
+            ...generateOrbit([1/2, 1/2, 1/2, 1/2]),            // 16 corner
+            ...generateOrbit([phi/2, 1/2, 1/(2*phi), 0], true) // 96 snub (even perms)
+        ];
+    }
+
+    function create600CellEdges(verts) {
+        // Regular polytope: all edges at the same squared distance, 1/φ².
+        const phi = (1 + Math.sqrt(5)) / 2;
+        return createEdgesBySquaredDistance(verts, 1 / (phi * phi));
+    }
+
+    // --- 120-cell (hexacosichoron's dual; the "dodecaplex") ---
+    //
+    // The convex regular 4-polytope with Schläfli symbol {5,3,3}. 600 vertices,
+    // 1200 edges, 720 pentagonal faces, 120 regular dodecahedral cells. Dual of
+    // the 600-cell. Its vertex figure is a regular tetrahedron, so 4 cells meet
+    // at every vertex and every vertex has degree 4.
+    //
+    // The 600 vertices fall into 7 orbits under permutations + sign changes,
+    // four under full S₄ and three under the alternating group A₄ (matching the
+    // golden-ratio appearance of the H₄ symmetry):
+    //   24:  permutations of (0, 0, ±2, ±2)
+    //   64:  permutations of (±1, ±1, ±1, ±√5)
+    //   64:  permutations of (±φ⁻², ±φ, ±φ, ±φ)
+    //   64:  permutations of (±φ⁻¹, ±φ⁻¹, ±φ⁻¹, ±φ²)
+    //   96:  even permutations of (0, ±φ⁻², ±1, ±φ²)
+    //   96:  even permutations of (0, ±φ⁻¹, ±φ, ±√5)
+    //  192:  even permutations of (±φ⁻¹, ±1, ±φ, ±2)
+    //
+    // The canonical scaling above gives circumradius 2√2 with edge length 2/φ².
+    // We multiply all coords by ½ so the circumradius becomes √2, matching the
+    // 24-cell / 288-cell / 48-cell family. In this scaling, edge length is
+    // 1/φ² ≈ 0.382 (squared = (14 − 6√5) / 4).
+    function create120CellVertices() {
+        const phi    = (1 + Math.sqrt(5)) / 2;
+        const phi_i  = 1 / phi;
+        const phi_sq = phi * phi;
+        const phi_i_sq = phi_i * phi_i;
+        const sqrt5  = Math.sqrt(5);
+        const s = 0.5;        // rescale from canonical R=2√2 down to R=√2
+
+        return [
+            ...generateOrbit([0,           0,           2*s,         2*s]),
+            ...generateOrbit([s,           s,           s,           sqrt5*s]),
+            ...generateOrbit([phi_i_sq*s,  phi*s,       phi*s,       phi*s]),
+            ...generateOrbit([phi_i*s,     phi_i*s,     phi_i*s,     phi_sq*s]),
+            ...generateOrbit([0,           phi_i_sq*s,  s,           phi_sq*s], true),
+            ...generateOrbit([0,           phi_i*s,     phi*s,       sqrt5*s],  true),
+            ...generateOrbit([phi_i*s,     s,           phi*s,       2*s],      true),
+        ];
+    }
+
+    function create120CellEdges(verts) {
+        // Regular polytope: all edges at squared distance (14 − 6√5)/4 in our scaling.
+        return createEdgesBySquaredDistance(verts, (14 - 6 * Math.sqrt(5)) / 4);
+    }
+
+    // --- Snub 24-cell (snub disicositetrachoron) ---
+    //
+    // The only non-Wythoffian uniform convex 4-polytope: it can't be generated
+    // by Wythoff's construction from a Coxeter mirror group, arising instead by
+    // alternation (snubbing) of the truncated 24-cell. 96 vertices, 432 edges,
+    // 480 triangular faces, 144 cells (96 tetrahedra + 24 icosahedra - the
+    // icosahedra are what give it its character; a "snub" normally yields only
+    // simplices, but here whole icosahedral cells survive).
+    //
+    // Its 96 vertices are exactly the snub orbit of the 600-cell - the even
+    // permutations of (±φ/2, ±½, ±1/(2φ), 0) - so it sits inside the 600-cell
+    // sharing that orbit, at the same unit circumradius. Its edges are precisely
+    // the 600-cell edges (sqDist 1/φ²) that join two snub vertices: 432 of the
+    // 600-cell's 720 edges. Uniform vertex degree 9.
+    function createSnub24CellVertices() {
+        const phi = (1 + Math.sqrt(5)) / 2;
+        return generateOrbit([phi / 2, 1 / 2, 1 / (2 * phi), 0], true);
+    }
+
+    function createSnub24CellEdges(verts) {
+        const phi = (1 + Math.sqrt(5)) / 2;
+        return createEdgesBySquaredDistance(verts, 1 / (phi * phi));
+    }
+
+    // --- E8 root polytope projected to 4D (the 4_21 → two 600-cells picture) ---
+    //
+    // The 240 minimal vectors of the E8 lattice, expressed in the icosian
+    // (golden-ratio quaternion) representation, decompose as 2I ∪ φ·2I -
+    // the binary icosahedral group at radius 1, together with a second copy
+    // scaled by the golden ratio at radius φ. Both copies are in the same
+    // orientation; the outer is literally inner × φ. This is the standard
+    // "E8 in 4D" picture: 240 = 120 + 120, two concentric and aligned 600-cells.
+    //
+    // The inner 600-cell is the same one already in the viewer (vertices 0..23
+    // are the 24-cell / binary tetrahedral group 2T, vertices 24..119 are the
+    // snub 24-cell). The outer is the φ-scaled copy with the same internal
+    // structure. So the 240 E8 roots split as
+    //     2 × (24-cell ∪ snub-24-cell)  =  48 + 192
+    // where 48 is twice the F4 root count and 192 is twice the snub.
+    //
+    // Edges drawn: each 600-cell's own 720 edges (inner at sqDist 1/φ², outer
+    // at sqDist 1 = φ² · 1/φ²). The full 4_21 has 6720 edges in 8D; the
+    // orthogonal projection collapses many and introduces cross-segments, but
+    // the two-600-cells view with native edges is the canonical visualization.
+    function createE8ProjectionVertices() {
+        const phi = (1 + Math.sqrt(5)) / 2;
+        const inner = [
+            ...generateOrbit([1,         0,        0,           0]),                     // 8 axis   ∈ 2T
+            ...generateOrbit([1/2,       1/2,      1/2,         1/2]),                   // 16 corner ∈ 2T
+            ...generateOrbit([phi/2,     1/2,      1/(2*phi),   0],             true),   // 96 snub
+        ];
+        const outer = inner.map(v => v.map(c => c * phi));
+        return [...inner, ...outer];
+    }
+
+    function createE8ProjectionEdges(verts) {
+        const phi = (1 + Math.sqrt(5)) / 2;
+        const inner = []; const outer = [];
+        for (let i = 0;   i < 120; i++) inner.push(i);
+        for (let i = 120; i < 240; i++) outer.push(i);
+        return [
+            ...edgesWithinAtSqDist(verts, inner, 1 / (phi * phi)),  // inner 600-cell edges
+            ...edgesWithinAtSqDist(verts, outer, 1)                  // outer 600-cell edges (φ² × inner sqDist)
+        ];
+    }
+
+    // --- A4 root polytope ---
+    //
+    // The 20 roots of A4 (the symmetric group S5's Coxeter system) are the
+    // vectors e_i − e_j ∈ ℝ⁵ for i ≠ j, all sitting in the hyperplane
+    // x₁+…+x₅ = 0. Embedding into 4D via an orthonormal basis of that
+    // hyperplane gives a uniform 4-polytope with 20 vertices and 60 edges
+    // (each vertex of degree 6: a root shares an index with 3 other roots
+    // in each of two "directions", giving 6 neighbours at the minimum
+    // distance √2). Since the embedding is orthogonal and the roots have
+    // norm √2 in 5D, the 4D circumradius is exactly √2, matching the rest
+    // of the 24-cell family.
+    //
+    // This is the A_n root polytope at n=4 (sometimes called the 2nd
+    // hypersimplex Δ(5,2) or the runcinated 5-cell relative; distinct
+    // from the truncated 5-cell, which has 40 edges rather than 60).
+    function createA4RootVertices() {
+        // Orthonormal basis of the 4D hyperplane {x : x₁+…+x₅ = 0} ⊂ ℝ⁵:
+        // each row is a unit vector in 5D, mutually orthogonal, all
+        // orthogonal to (1,1,1,1,1). The k-th row is the Gram-Schmidt
+        // direction taking e₁+…+e_k against e_{k+1}.
+        const s2 = Math.sqrt(2), s6 = Math.sqrt(6), s12 = Math.sqrt(12), s20 = Math.sqrt(20);
+        const M = [
+            [ 1/s2,   -1/s2,   0,      0,     0    ],
+            [ 1/s6,    1/s6,  -2/s6,   0,     0    ],
+            [ 1/s12,   1/s12,  1/s12, -3/s12, 0    ],
+            [ 1/s20,   1/s20,  1/s20,  1/s20,-4/s20]
+        ];
+        const verts = [];
+        for (let i = 0; i < 5; i++) for (let j = 0; j < 5; j++) {
+            if (i === j) continue;
+            const v5 = [0, 0, 0, 0, 0]; v5[i] = 1; v5[j] = -1;
+            const v4 = [0, 0, 0, 0];
+            for (let r = 0; r < 4; r++) for (let c = 0; c < 5; c++) v4[r] += M[r][c] * v5[c];
+            verts.push(v4);
+        }
+        return verts;
+    }
+
+    function createA4RootEdges(verts) {
+        // Minimum non-zero distance among A4 roots is √2 (between roots
+        // sharing exactly one of their two indices). 60 such edges.
+        return createEdgesBySquaredDistance(verts, 2);
+    }
+
+    // --- B4 / C4 root polytope ---
+    //
+    // The B4 root system has 32 roots split into two orbits of different
+    // lengths:
+    //   - 8 short roots ±e_i (radius 1, forming a 16-cell)
+    //   - 24 long roots ±e_i ± e_j with i<j (radius √2, forming a 24-cell)
+    // C4 is the dual: same root set with long/short labels swapped (so the
+    // ±e_i become long and the ±e_i ± e_j become short, in different units).
+    // We use the B4 normalization here. As a convex polytope the hull is
+    // just the 24-cell - the 8 short roots are interior to it, sitting at
+    // the midpoints of the 24-cell's edges - so unlike the regular polytopes
+    // this one's "vertex set" is larger than its hull vertices.
+    //
+    // Three edge classes are drawn:
+    //   - 96 long-long edges at sqDist 2 (the 24-cell's own edges)
+    //   - 24 short-short edges at sqDist 2 (the 16-cell's own edges)
+    //   - 48 short-long edges at sqDist 1 (each short root joins the 6 long
+    //     roots that share its positive direction)
+    // Total 168 edges, two distance classes (sqDist 1 and 2).
+    //
+    // Structurally: B4 = D4 + 16-cell axes. The D4 part is exactly the
+    // 24-cell (the long roots), and adding the 8 short roots is what
+    // extends D4 to B4. This makes the relationship to the 24-cell explicit.
+    function createB4RootVertices() {
+        const verts = [];
+        // 8 short roots ±e_i
+        for (let i = 0; i < 4; i++) {
+            for (const s of [1, -1]) {
+                const v = [0, 0, 0, 0]; v[i] = s; verts.push(v);
+            }
+        }
+        // 24 long roots ±e_i ± e_j with i < j
+        for (let i = 0; i < 4; i++) {
+            for (let j = i + 1; j < 4; j++) {
+                for (const si of [1, -1]) for (const sj of [1, -1]) {
+                    const v = [0, 0, 0, 0]; v[i] = si; v[j] = sj; verts.push(v);
+                }
+            }
+        }
+        return verts;
+    }
+
+    function createB4RootEdges(verts) {
+        // Two distance classes: short-long at sqDist 1, and short-short +
+        // long-long at sqDist 2.
+        return [
+            ...createEdgesBySquaredDistance(verts, 1),
+            ...createEdgesBySquaredDistance(verts, 2)
+        ];
+    }
+
+    // --- Disphenoidal 288-cell ---
+    //
+    // The convex hull of two inscribed 24-cells (the F₄ root system). 48 vertices:
+    //   - 24 from the standard 24-cell at vertices (±1, ±1, 0, 0) and permutations.
+    //   - 24 from the dual 24-cell, scaled by √2 so it lies on the same 3-sphere:
+    //     8 axis vertices (±√2, 0, 0, 0) plus 16 corner vertices (±√2/2)^4.
+    // Both 24-cells are at radius √2 from the origin. After scaling, both have
+    // edge length √2 — these become the "long" edges of the 288-cell.
+    // Between the two 24-cells there are shorter edges of length √(4 − 2√2),
+    // connecting each red vertex to 6 yellow neighbors and vice versa.
+    // Edge counts: 96 + 96 = 192 long edges, 144 short edges → 336 total.
+    //
+    // The cells are 288 congruent tetragonal disphenoids (irregular tetrahedra
+    // with 2 perpendicular antipodal long edges and 4 short edges). Their
+    // enumeration is more involved and contributes little visually — 288
+    // congruent shapes blend together — so cell highlighting is left off.
+    function create288CellVertices() {
+        const verts = [];
+        const r2 = Math.sqrt(2);
+        const h = r2 / 2;
+
+        // First 24-cell: permutations of (±1, ±1, 0, 0)
+        const pairs = [[0,1],[0,2],[0,3],[1,2],[1,3],[2,3]];
+        const signs = [[1,1],[1,-1],[-1,1],[-1,-1]];
+        for (const [a, b] of pairs) {
+            for (const [sa, sb] of signs) {
+                const v = [0, 0, 0, 0];
+                v[a] = sa;
+                v[b] = sb;
+                verts.push(v);
+            }
+        }
+
+        // Second (dual) 24-cell, scaled by √2:
+        // 8 axis vertices (±√2, 0, 0, 0)
+        for (let i = 0; i < 4; i++) {
+            for (const s of [1, -1]) {
+                const v = [0, 0, 0, 0];
+                v[i] = s * r2;
+                verts.push(v);
+            }
+        }
+        // 16 corner vertices (±√2/2)^4
+        for (let m = 0; m < 16; m++) {
+            verts.push([
+                (m & 1) ? h : -h,
+                (m & 2) ? h : -h,
+                (m & 4) ? h : -h,
+                (m & 8) ? h : -h
+            ]);
+        }
+
+        return verts;
+    }
+
+    // Long edges (within either 24-cell): squared distance 2.
+    // Short edges (between the two 24-cells): squared distance 4 − 2√2.
+    function create288CellEdges(verts) {
+        const longSq  = 2;
+        const shortSq = 4 - 2 * Math.sqrt(2);
+        const tol = 0.01;
+        const result = [];
+        for (let i = 0; i < verts.length; i++) {
+            for (let j = i + 1; j < verts.length; j++) {
+                const d2 = squaredDist4D(verts[i], verts[j]);
+                if (Math.abs(d2 - longSq)  < tol ||
+                    Math.abs(d2 - shortSq) < tol) {
+                    result.push([i, j]);
+                }
+            }
+        }
+        return result;
+    }
+
+    function getTesseractCells() {
+        return [
+            { name: 'X=-1', coord: 0, value: -1, hue:   0 },
+            { name: 'X=+1', coord: 0, value:  1, hue:  45 },
+            { name: 'Y=-1', coord: 1, value: -1, hue:  90 },
+            { name: 'Y=+1', coord: 1, value:  1, hue: 135 },
+            { name: 'Z=-1', coord: 2, value: -1, hue: 180 },
+            { name: 'Z=+1', coord: 2, value:  1, hue: 225 },
+            { name: 'W=-1', coord: 3, value: -1, hue: 270 },
+            { name: 'W=+1', coord: 3, value:  1, hue: 315 }
+        ];
+    }
+
+    function get5CellCells() {
+        return [0, 1, 2, 3, 4].map(i => ({
+            name: `Cell ${i}`, excludeVertex: i, hue: i * 72
+        }));
+    }
+
+    function get16CellCells() {
+        const orthants = [];
+        for (const x of [0, 1])
+            for (const y of [2, 3])
+                for (const z of [4, 5])
+                    for (const w of [6, 7])
+                        orthants.push([x, y, z, w]);
+        return orthants.map((vs, i) => ({
+            name: `Cell ${i}`, vertexIndices: vs, hue: i * (360 / 16)
+        }));
+    }
+
+    function get24CellCells() {
+        return Array.from({ length: 24 }, (_, i) => ({
+            name: `Cell ${i}`, centerVertexIndex: i, hue: i * (360 / 24), isOctahedral: true
+        }));
+    }
+
+    function getTesseractCellFaces(cell, verts) {
+        const faces = [];
+        const cellVerts = [];
+        verts.forEach((v, idx) => { if (v[cell.coord] === cell.value) cellVerts.push(idx); });
+
+        for (let i = 0; i < 4; i++) {
+            if (i === cell.coord) continue;
+            for (const val of [-1, 1]) {
+                const faceVerts = cellVerts.filter(idx => verts[idx][i] === val);
+                if (faceVerts.length !== 4) continue;
+
+                const freeCoords = [0, 1, 2, 3].filter(c => c !== cell.coord && c !== i);
+                const grouped = {};
+                faceVerts.forEach(idx => {
+                    const key = verts[idx][freeCoords[0]];
+                    (grouped[key] = grouped[key] || []).push(idx);
+                });
+                const sortedKeys = Object.keys(grouped).sort((a, b) => Number(a) - Number(b));
+                const ordered = [];
+                for (const key of sortedKeys) {
+                    grouped[key].sort((a, b) => verts[a][freeCoords[1]] - verts[b][freeCoords[1]]);
+                    ordered.push(...grouped[key]);
+                }
+                faces.push({ vertices: [ordered[0], ordered[1], ordered[3], ordered[2]], cell });
+            }
+        }
+        return faces;
+    }
+
+    function get5CellFaces(cell, verts) {
+        const cellVerts = [];
+        for (let i = 0; i < verts.length; i++) if (i !== cell.excludeVertex) cellVerts.push(i);
+        return cellVerts.map((_, i) => ({
+            vertices: cellVerts.filter((_, j) => j !== i),
+            cell
+        }));
+    }
+
+    function get16CellFaces(cell, verts) {
+        const cv = cell.vertexIndices;
+        return cv.map((_, i) => ({
+            vertices: cv.filter((_, j) => j !== i),
+            cell
+        }));
+    }
+
+    function get24CellFacesByCell(cells, verts) {
+        const edgeLen = Math.sqrt(2);
+        const tol = 0.01;
+        const allFaces = [];
+
+        for (let i = 0; i < verts.length; i++) {
+            for (let j = i + 1; j < verts.length; j++) {
+                for (let k = j + 1; k < verts.length; k++) {
+                    const v1 = verts[i], v2 = verts[j], v3 = verts[k];
+                    if (Math.abs(Math.sqrt(squaredDist4D(v1, v2)) - edgeLen) < tol &&
+                        Math.abs(Math.sqrt(squaredDist4D(v1, v3)) - edgeLen) < tol &&
+                        Math.abs(Math.sqrt(squaredDist4D(v2, v3)) - edgeLen) < tol) {
+                        const centroid = [
+                            (v1[0] + v2[0] + v3[0]) / 3,
+                            (v1[1] + v2[1] + v3[1]) / 3,
+                            (v1[2] + v2[2] + v3[2]) / 3,
+                            (v1[3] + v2[3] + v3[3]) / 3
+                        ];
+                        allFaces.push({ vertices: [i, j, k], centroid });
+                    }
+                }
+            }
+        }
+
+        const facesByCell = cells.map(() => []);
+        for (const face of allFaces) {
+            let minDist = Infinity, nearest = -1;
+            for (let v = 0; v < verts.length; v++) {
+                const d = squaredDist4D(face.centroid, verts[v]);
+                if (d < minDist) { minDist = d; nearest = v; }
+            }
+            const cellIdx = cells.findIndex(c => c.centerVertexIndex === nearest);
+            if (cellIdx >= 0) facesByCell[cellIdx].push({ vertices: face.vertices, cell: cells[cellIdx] });
+        }
+        return facesByCell;
+    }
+
+    const perCellFaces = (gen) => (cells, verts) => cells.map(c => gen(c, verts));
+
+    const POLYTOPE_BUILDERS = {
+        'tesseract': {
+            title: '8-Cell: 8 Cubic Cells',
+            v: createTesseractVertices, e: createTesseractEdges, c: getTesseractCells,
+            faces: perCellFaces(getTesseractCellFaces)
+        },
+        '5cell': {
+            title: '5-Cell: 5 Tetrahedral Cells',
+            v: create5CellVertices, e: create5CellEdges, c: get5CellCells,
+            faces: perCellFaces(get5CellFaces)
+        },
+        '16cell': {
+            title: '16-Cell: 16 Tetrahedral Cells',
+            v: create16CellVertices, e: create16CellEdges, c: get16CellCells,
+            faces: perCellFaces(get16CellFaces)
+        },
+        '24cell': {
+            title: '24-Cell: 24 Octahedral Cells',
+            v: create24CellVertices, e: create24CellEdges, c: get24CellCells,
+            faces: get24CellFacesByCell
+        },
+        '288cell': {
+            // Cell highlighting deliberately omitted: 288 congruent disphenoids
+            // would create visual noise without conveying structure.
+            title: 'Disphenoidal 288-Cell',
+            v: create288CellVertices, e: create288CellEdges, c: () => [],
+            faces: () => []
+        },
+        '48cell': {
+            // Cell highlighting omitted: 48 truncated cubes share many vertices
+            // and the enumeration adds complexity without clear visual payoff.
+            title: 'Bitruncated 24-Cell (48-Cell)',
+            v: create48CellVertices, e: create48CellEdges, c: () => [],
+            faces: () => []
+        },
+        '600cell': {
+            // Cell highlighting omitted for now: 600 tetrahedral cells would
+            // be visual clutter, and enumeration takes nontrivial work.
+            title: '600-Cell (Hexacosichoron)',
+            v: create600CellVertices, e: create600CellEdges, c: () => [],
+            faces: () => []
+        },
+        '120cell': {
+            // Cell highlighting omitted: 120 dodecahedral cells share many
+            // vertices, and enumeration is involved.
+            title: '120-Cell (Dodecaplex)',
+            v: create120CellVertices, e: create120CellEdges, c: () => [],
+            faces: () => []
+        },
+        'snub24cell': {
+            // Cell highlighting omitted: 144 cells (96 tetrahedra + 24 icosahedra)
+            // would be heavy to enumerate and busy to display.
+            title: 'Snub 24-Cell (snub disicositetrachoron)',
+            v: createSnub24CellVertices, e: createSnub24CellEdges, c: () => [],
+            faces: () => []
+        },
+        'e8projection': {
+            // 240 vertices = the E8 root system projected via the icosian
+            // representation. Cell highlighting doesn't apply (not a single
+            // uniform polytope but a projection of one).
+            title: 'E8 Projection (4_21 → 4D, two 600-cells at φ ratio)',
+            v: createE8ProjectionVertices, e: createE8ProjectionEdges, c: () => [],
+            faces: () => []
+        },
+        'a4root': {
+            // No cell highlighting: the A4 root polytope's cell structure
+            // (5 tetrahedra + 5 octahedra) isn't enumerated here.
+            title: 'A4 Root Polytope (20 roots of S5)',
+            v: createA4RootVertices, e: createA4RootEdges, c: () => [],
+            faces: () => []
+        },
+        'b4root': {
+            // No cell highlighting. The convex hull is the 24-cell; the 8
+            // short roots sit interior to it, not on the hull's faces.
+            title: 'B4/C4 Root Polytope (32 roots: 24-cell + 16-cell)',
+            v: createB4RootVertices, e: createB4RootEdges, c: () => [],
+            faces: () => []
+        }
+    };
+
+    function buildPolytopeSpec(type) {
+        const b = POLYTOPE_BUILDERS[type];
+        const vertices = b.v();
+        const edges = b.e(vertices);
+        const cells = b.c();
+        const facesByCell = b.faces(cells, vertices);
+
+        const spec = {
+            type, title: b.title, vertices, edges, cells, facesByCell,
+            tiles: POLYTOPES_THAT_TILE.has(type),
+            decompositions: buildDecompositions(type, vertices)
+        };
+
+        // Separate from `decompositions`: projection-3D mode's vertex classification
+        // depends on the viewing axis (1,1,0,0), not on intrinsic polytope structure.
+        if (type === '24cell') {
+            spec.vertexClassifications = vertices.map(classify24CellVertex);
+        }
+
+        return spec;
+    }
+
+    function initializePolytope(type) {
+        currentPolytope = type;
+        polytope = buildPolytopeSpec(type);
+        selectedCellIndex = 0;
+        trailHistory = [];
+        rebuildLatticeGeometry();
+    }
+
+    // =========================================================================
+    // 4D / 3D Math
+    // =========================================================================
+
+    function rotateXY(p, a) { const c = Math.cos(a), s = Math.sin(a); return [p[0]*c - p[1]*s, p[0]*s + p[1]*c, p[2], p[3]]; }
+    function rotateXZ(p, a) { const c = Math.cos(a), s = Math.sin(a); return [p[0]*c - p[2]*s, p[1], p[0]*s + p[2]*c, p[3]]; }
+    function rotateXW(p, a) { const c = Math.cos(a), s = Math.sin(a); return [p[0]*c - p[3]*s, p[1], p[2], p[0]*s + p[3]*c]; }
+    function rotateYZ(p, a) { const c = Math.cos(a), s = Math.sin(a); return [p[0], p[1]*c - p[2]*s, p[1]*s + p[2]*c, p[3]]; }
+    function rotateYW(p, a) { const c = Math.cos(a), s = Math.sin(a); return [p[0], p[1]*c - p[3]*s, p[2], p[1]*s + p[3]*c]; }
+    function rotateZW(p, a) { const c = Math.cos(a), s = Math.sin(a); return [p[0], p[1], p[2]*c - p[3]*s, p[2]*s + p[3]*c]; }
+
+    function applyAll4DRotations(v) {
+        v = rotateXY(v, angleXY);
+        v = rotateXZ(v, angleXZ);
+        v = rotateXW(v, angleXW);
+        v = rotateYZ(v, angleYZ);
+        v = rotateYW(v, angleYW);
+        v = rotateZW(v, angleZW);
+        return v;
+    }
+
+    function rotate3DX(p, a) { const c = Math.cos(a), s = Math.sin(a); return [p[0], p[1]*c - p[2]*s, p[1]*s + p[2]*c]; }
+    function rotate3DY(p, a) { const c = Math.cos(a), s = Math.sin(a); return [p[0]*c + p[2]*s, p[1], -p[0]*s + p[2]*c]; }
+    function rotate3DZ(p, a) { const c = Math.cos(a), s = Math.sin(a); return [p[0]*c - p[1]*s, p[0]*s + p[1]*c, p[2]]; }
+
+    function applyAll3DRotations(p) {
+        p = rotate3DX(p, angle3DX);
+        p = rotate3DY(p, angle3DY);
+        p = rotate3DZ(p, angle3DZ);
+        return p;
+    }
+
+    function projectTo3DHyperplane(p, axis) {
+        if (axis[0] === 0 && axis[1] === 0 && axis[2] === 0 && axis[3] === 1) {
+            return [p[0], p[1], p[2]];
+        }
+        if (axis[0] === 1 && axis[1] === 1 && axis[2] === 0 && axis[3] === 0) {
+            return [(p[0] - p[1]) / Math.sqrt(2), p[2], p[3]];
+        }
+        throw new Error(`No projection defined for axis [${axis}]`);
+    }
+
+    function project4Dto3D(p) {
+        const [x, y, z, w] = p;
+
+        if (sphereMode && !projection3DEnabled) {
+            // Stereographic projection from S³ to R³. The normalization by |p|
+            // strips out the `scale` factor that's baked into the transform
+            // matrix - vertices arrive here already scaled but get re-mapped
+            // onto the unit S³. We re-apply `scale` to the projected 3D point
+            // so the mouse-wheel zoom still works in this view; without this
+            // multiplier, the polytope would render at the same size for any
+            // zoom level.
+            const len = Math.sqrt(x*x + y*y + z*z + w*w);
+            const nw = w / len;
+            const denom = 1 + nw;
+            if (Math.abs(denom) < 0.01) {
+                // Near south pole: would project to infinity; clamp to a finite
+                // surrogate so geometry stays drawable.
+                const k = (0.01 / Math.abs(denom)) * scale;
+                return [x / len * k, y / len * k, z / len * k, 0];
+            }
+            const k = SPHERE_PROJECTION_SCALE * scale / (len * denom);
+            return [x * k, y * k, z * k, 0];
+        }
+
+        if (orthographicMode || projection3DEnabled) {
+            return [x, y, z, w];
+        }
+
+        const clampedW = Math.max(-2.5, Math.min(2.5, w));
+        const k = VIEWING_DISTANCE_4D / (VIEWING_DISTANCE_4D - clampedW);
+        return [x * k, y * k, z * k, w];
+    }
+
+    function project3Dto2D(p, eyeOffset) {
+        const [x, y, z, w] = p;
+        if (z >= NEAR_PLANE_Z) {
+            return { x: 0, y: 0, w, behind: true };
+        }
+        const k = VIEWING_DISTANCE_3D / (VIEWING_DISTANCE_3D - z);
+        return {
+            x: (x + eyeOffset) * k * SCREEN_SCALE,
+            y: y * k * SCREEN_SCALE,
+            w,
+            behind: false
+        };
+    }
+
+    // Clip an edge to the near plane in 3D screen space, AND interpolate the
+    // corresponding 4D point so that color sampling at the clipped endpoint
+    // uses coordinates of the *actual* 4D point that projects to the clip
+    // location, not the (now invisible) original 4D vertex and not a naively
+    // t-linear interpolated 4D point.
+    //
+    // The 3D segment between two perspective-projected 4D points is the
+    // straight line connecting their 3D images, but linear interpolation in 3D
+    // is NOT the same as linear interpolation in 4D - because of perspective
+    // division by w. For w-hue (linear in w) the difference is small. For
+    // hexachromatic mode, hue is atan2(c2, c1), highly nonlinear, so even
+    // modest coordinate errors produce visible color jumps. We need the *true*
+    // 4D point on the segment whose projection lands at the clip plane.
+    //
+    // Derivation: with v_4d(t') = v1_4d + t'·(v2_4d - v1_4d), the projected z
+    // is (z1 + t'·Δz_4d) · 3 / (3 - w1 - t'·Δw). Setting this to NEAR_PLANE_Z:
+    //   t' = (3·NEAR_PLANE_Z - 3·w1·NEAR_PLANE_Z/3 - 3z1) / (3Δz + NEAR_PLANE_Z·Δw)
+    // simplified below. The denominator vanishes when the 4D edge runs
+    // parallel to the projection direction in (z,w) - rare; fall back to the
+    // linear-t approximation in that case.
+    //
+    // Returns null if both endpoints are behind, otherwise:
+    //   { p1, p2, v1_4d, v2_4d }
+    function clipEdgeToNearPlane(v1_3d, v2_3d, p1_2d, p2_2d, eyeOffset, v1_4d, v2_4d) {
+        const b1 = p1_2d.behind, b2 = p2_2d.behind;
+        if (b1 && b2) return null;
+        if (!b1 && !b2) return { p1: p1_2d, p2: p2_2d, v1_4d, v2_4d };
+
+        // 3D clip parameter (for the screen-space geometry of the clipped edge)
+        const z1_3d = v1_3d[2], z2_3d = v2_3d[2];
+        const t = (NEAR_PLANE_Z - z1_3d) / (z2_3d - z1_3d);
+        const vc_3d = [
+            v1_3d[0] + t * (v2_3d[0] - v1_3d[0]),
+            v1_3d[1] + t * (v2_3d[1] - v1_3d[1]),
+            NEAR_PLANE_Z - 0.001,
+            v1_3d[3] + t * (v2_3d[3] - v1_3d[3])
+        ];
+        const pc_2d = project3Dto2D(vc_3d, eyeOffset);
+
+        // Perspective-correct 4D clip parameter: find t' such that
+        // project4Dto3D(lerp(v1_4d, v2_4d, t')) has z = NEAR_PLANE_Z.
+        // Only meaningful in true perspective mode. Orthographic / projection3D
+        // skip the perspective division entirely, so linear-t is exact.
+        const w1 = v1_4d[3], w2 = v2_4d[3];
+        const z1_4d = v1_4d[2], z2_4d = v2_4d[2];
+        const dw = w2 - w1, dz4 = z2_4d - z1_4d;
+        const D = VIEWING_DISTANCE_4D;          // = 3
+        const NP = NEAR_PLANE_Z;                 // = 3.5
+        let t4;
+        if (orthographicMode || projection3DEnabled) {
+            // No perspective division - 4D z equals 3D z, and 4D w is unused
+            // for the geometry, so the existing 3D t works fine here.
+            t4 = t;
+        } else {
+            const denom = D * dz4 + NP * dw;
+            if (Math.abs(denom) < 1e-9) {
+                t4 = t;     // fall back: edge runs parallel to projection direction
+            } else {
+                t4 = (NP * (D - w1) - D * z1_4d) / denom;
+            }
+        }
+        const vc_4d = [
+            v1_4d[0] + t4 * (v2_4d[0] - v1_4d[0]),
+            v1_4d[1] + t4 * (v2_4d[1] - v1_4d[1]),
+            v1_4d[2] + t4 * (v2_4d[2] - v1_4d[2]),
+            v1_4d[3] + t4 * (v2_4d[3] - v1_4d[3])
+        ];
+
+        if (b1) return { p1: pc_2d, p2: p2_2d, v1_4d: vc_4d, v2_4d };
+        return { p1: p1_2d, p2: pc_2d, v1_4d, v2_4d: vc_4d };
+    }
+
+    function identityMatrix4() {
+        return [1,0,0,0,  0,1,0,0,  0,0,1,0,  0,0,0,1];
+    }
+
+    function applyMatrix4(M, v) {
+        return [
+            M[0]*v[0]  + M[1]*v[1]  + M[2]*v[2]  + M[3]*v[3],
+            M[4]*v[0]  + M[5]*v[1]  + M[6]*v[2]  + M[7]*v[3],
+            M[8]*v[0]  + M[9]*v[1]  + M[10]*v[2] + M[11]*v[3],
+            M[12]*v[0] + M[13]*v[1] + M[14]*v[2] + M[15]*v[3]
+        ];
+    }
+
+    function rebuildTransformMatrix() {
+        const e0 = computeTransformDirect([scale, 0, 0, 0]);
+        const e1 = computeTransformDirect([0, scale, 0, 0]);
+        const e2 = computeTransformDirect([0, 0, scale, 0]);
+        const e3 = computeTransformDirect([0, 0, 0, scale]);
+        transformMatrix = [
+            e0[0], e1[0], e2[0], e3[0],
+            e0[1], e1[1], e2[1], e3[1],
+            e0[2], e1[2], e2[2], e3[2],
+            e0[3], e1[3], e2[3], e3[3]
+        ];
+    }
+
+    function computeTransformDirect(v) {
+        if (projection3DEnabled) {
+            const p3d = projectTo3DHyperplane(v, projection3DAxis);
+            const rotated = applyAll3DRotations(p3d);
+            return [rotated[0], rotated[1], rotated[2], 0];
+        }
+        return applyAll4DRotations(v);
+    }
+
+    function transformVertex(v) {
+        return applyMatrix4(transformMatrix, v);
+    }
+
+    // =========================================================================
+    // Coloring & Classification
+    // =========================================================================
+
+    function wToHue(w) {
+        return 240 - (w + 1) * 120;
+    }
+
+    function angleToHue(c1, c2) {
+        const deg = Math.atan2(c2, c1) * 180 / Math.PI;
+        return (deg + 360) % 360;
+    }
+
+    function blendHues(h1, h2) {
+        let diff = h2 - h1;
+        if (diff > 180)       h2 -= 360;
+        else if (diff < -180) h2 += 360;
+        const avg = (h1 + h2) / 2;
+        return ((avg % 360) + 360) % 360;
+    }
+
+    // Return h2 adjusted (possibly outside [0, 360]) so that linear
+    // interpolation from h1 to h2 goes the short way around the color wheel.
+    // CSS HSL accepts hue values outside [0, 360] and treats them mod 360, so
+    // the returned value is safe to pass directly into hsla(...).
+    // Used when constructing CSS linear gradients between two endpoint hues:
+    // without this, a gradient between hue 350 and hue 10 would interpolate
+    // through cyan/green instead of through pure red, producing visible
+    // hue-wrap artifacts near the negative-c1 axis in hexachromatic mode.
+    function unwrapHue(h1, h2) {
+        const diff = h2 - h1;
+        if (diff > 180)       return h2 - 360;
+        if (diff < -180)      return h2 + 360;
+        return h2;
+    }
+
+    // Tolerance below which the hue from circular averaging is treated as
+    // ambiguous and the result fades to white. Same shape as HEX_POLE_EPSILON_SQ.
+    const BLEND_FADE_EPSILON_SQ = 0.0225;   // ε² with ε = 0.15
+
+    // Blend two endpoint colors {hue, sat, light} into a single flat color
+    // suitable for stroking an edge. The hue is averaged via unit-vector sum
+    // (handles the 0/360° wrap-around correctly), and when the two endpoint
+    // hues approach 180° apart the result fades to white - same trick used
+    // by the hex-mode pole fade. This avoids the visible jump that comes from
+    // arithmetic short-way hue averaging when rotation pushes the two
+    // endpoints past exactly 180° apart, where the "short way" flips sides.
+    //
+    // Coherence c = |unit_vec(h1) + unit_vec(h2)| / 2 = |cos((h1-h2)/2)|.
+    //   c = 1 when hues match, c = 0 when hues are exactly antipodal.
+    // Fade f = c² / (c² + ε²) smoothly interpolates 0..1 with continuous
+    // derivative at c = 0. ε ≈ 0.15 puts the half-fade near Δh = 163°, so
+    // edges with hue differences below ~150° look essentially unchanged.
+    function blendColors(c1, c2) {
+        const r1 = c1.hue * Math.PI / 180;
+        const r2 = c2.hue * Math.PI / 180;
+        const sumX = Math.cos(r1) + Math.cos(r2);
+        const sumY = Math.sin(r1) + Math.sin(r2);
+        // coherence² = |unit-vector sum|² / 4
+        const coherenceSq = (sumX * sumX + sumY * sumY) / 4;
+
+        let hue;
+        if (coherenceSq < 1e-12) {
+            // Exact antipode: hue is undefined. Pick c1.hue arbitrarily -
+            // saturation will be 0 below, so the actual hue value won't show.
+            hue = c1.hue;
+        } else {
+            hue = ((Math.atan2(sumY, sumX) * 180 / Math.PI) + 360) % 360;
+        }
+
+        const f = coherenceSq / (coherenceSq + BLEND_FADE_EPSILON_SQ);
+        const satAvg   = (c1.sat   + c2.sat)   / 2;
+        const lightAvg = (c1.light + c2.light) / 2;
+        const sat   = satAvg * f;
+        const light = lightAvg * f + (1 - f);     // toward 1 (white) as f → 0
+        return { hue, sat, light };
+    }
+
+    // Circular mean of multiple hues (for vertices in several decomposition groups)
+    function circularMeanOfHues(hues) {
+        if (hues.length === 1) return hues[0];
+        let sumCos = 0, sumSin = 0;
+        for (const h of hues) {
+            const rad = h * Math.PI / 180;
+            sumCos += Math.cos(rad);
+            sumSin += Math.sin(rad);
+        }
+        if (Math.abs(sumCos) < 1e-9 && Math.abs(sumSin) < 1e-9) return hues[0];
+        const avgRad = Math.atan2(sumSin, sumCos);
+        return ((avgRad * 180 / Math.PI) + 360) % 360;
+    }
+
+    // Quaternion multiplication using the (w, x, y, z) interpretation of 4D
+    // coordinates. The 600-cell's 120 vertices, treated as unit quaternions,
+    // form the binary icosahedral group 2I — they're closed under this product.
+    // Used to construct the 25 inscribed 24-cells as cosets of 2T ⊂ 2I.
+    function quatMul(a, b) {
+        return [
+            a[0]*b[0] - a[1]*b[1] - a[2]*b[2] - a[3]*b[3],
+            a[0]*b[1] + a[1]*b[0] + a[2]*b[3] - a[3]*b[2],
+            a[0]*b[2] - a[1]*b[3] + a[2]*b[0] + a[3]*b[1],
+            a[0]*b[3] + a[1]*b[2] - a[2]*b[1] + a[3]*b[0]
+        ];
+    }
+
+    // Conjugate (= inverse for unit quaternions)
+    function quatConj(q) { return [q[0], -q[1], -q[2], -q[3]]; }
+
+    // Triality group of a 24-cell vertex: which of the 3 disjoint 16-cells it belongs to.
+    // Determined by which pair of coordinate axes are non-zero.
+    function getTrialityGroup(v) {
+        const nz = [];
+        for (let i = 0; i < 4; i++) if (Math.abs(v[i]) > 0.5) nz.push(i);
+        nz.sort((a, b) => a - b);
+        const pair = nz[0] * 10 + nz[1];
+        if (pair === 1  || pair === 23) return 0;
+        if (pair === 2  || pair === 13) return 1;
+        if (pair === 3  || pair === 12) return 2;
+        return 0;
+    }
+
+    // 24-cell vertex classification for projection-3D mode (axis α = (1,1,0,0))
+    function classify24CellVertex(v) {
+        const inner = v[0] + v[1];
+        if (Math.abs(inner - 2) < 0.01) return 'center';
+        if (Math.abs(inner + 2) < 0.01) return 'center';
+        if (Math.abs(inner)     < 0.01) return 'octahedron';
+        if (Math.abs(inner - 1) < 0.01) return 'cube1';
+        if (Math.abs(inner + 1) < 0.01) return 'cube2';
+        return 'unknown';
+    }
+
+    function get4DAxes() {
+        return [
+            { endpoints: [[-1, 0, 0, 0], [1, 0, 0, 0]], hue: AXES_HUES[0], name: 'X' },
+            { endpoints: [[0, -1, 0, 0], [0, 1, 0, 0]], hue: AXES_HUES[1], name: 'Y' },
+            { endpoints: [[0, 0, -1, 0], [0, 0, 1, 0]], hue: AXES_HUES[2], name: 'Z' },
+            { endpoints: [[0, 0, 0, -1], [0, 0, 0, 1]], hue: AXES_HUES[3], name: 'W' }
+        ];
+    }
+
+    // Central per-endpoint color function so clipped and unclipped endpoints
+    // use the same logic. Returns { hue, sat, light } where sat and light are
+    // in [0, 1].
+    //
+    // Hexachromatic mode parameterizes S³ by two independent angles:
+    //   left eye:  θ_L = atan2(z, x), undefined when r_L = √(x²+z²) = 0
+    //   right eye: θ_R = atan2(w, y), undefined when r_R = √(y²+w²) = 0
+    // The two polar circles where each angle is undefined are the geometric
+    // poles of the (S¹ × S¹) torus parameterization of S³. We honor this by
+    // fading saturation to 0 and lightness to 1 (white) as the relevant r
+    // approaches 0 - white is the most honest color for "hue is undefined
+    // here" and reads cleanly on the black background.
+    //
+    // The fade uses r² / (r² + ε²), smooth at r = 0 with continuous derivative.
+    // ε controls the visible width of the polar region; ε ≈ 0.15 on unit S³
+    // leaves most positions at near-full saturation while making the polar
+    // fade visible during animation.
+    const HEX_POLE_EPSILON_SQ = 0.0225;   // ε² with ε = 0.15
+
+    function hueForEndpoint(v_4d, vertexClassification, eyeSide) {
+        if (hexachromaticMode) {
+            let c1, c2;
+            if (eyeSide === 'left') { c1 = v_4d[0]; c2 = v_4d[2]; }
+            else                    { c1 = v_4d[1]; c2 = v_4d[3]; }
+            const rSq = c1 * c1 + c2 * c2;
+            const sat = rSq / (rSq + HEX_POLE_EPSILON_SQ);
+            // light: 0.5 at full saturation, → 1 (white) at the pole
+            const light = 0.5 + 0.5 * (1 - sat);
+            const hue = angleToHue(c1, c2);
+            return { hue, sat, light };
+        }
+        if (projection3DEnabled && polytope.type === '24cell' && vertexClassification) {
+            return { hue: PROJ_DECOMP_COLORS[vertexClassification]?.hue || 0, sat: 1, light: 0.5 };
+        }
+        return { hue: wToHue(v_4d[3]), sat: 1, light: 0.5 };
+    }
+
+    // =========================================================================
+    // Decompositions
+    // =========================================================================
+
+    function buildDecompositions(type, verts) {
+        let decomps = {};
+        if (type === '24cell')       decomps = build24CellDecompositions(verts);
+        else if (type === 'tesseract') decomps = buildTesseractDecompositions(verts);
+        else if (type === '16cell')    decomps = build16CellDecompositions(verts);
+        else if (type === '288cell')   decomps = build288CellDecompositions(verts);
+        else if (type === '600cell')   decomps = build600CellDecompositions(verts);
+        else if (type === '120cell')   decomps = build120CellDecompositions(verts);
+
+        for (const decomp of Object.values(decomps)) {
+            decomp.vertexHues = buildDecompVertexHues(decomp, verts.length);
+            decomp.coveredEdgeKeys = buildCoveredEdgeKeys(decomp);
+            decomp.coveredEdgeData = buildCoveredEdgeData(decomp);
+        }
+        return decomps;
+    }
+
+    // Canonical (smaller index first) edge keys for every edge claimed by some
+    // decomposition group. Used by the renderer to skip drawing central-
+    // polytope edges that the decomposition already draws in its own color.
+    function buildCoveredEdgeKeys(decomp) {
+        const keys = new Set();
+        for (const group of decomp.groups) {
+            for (const [i, j] of group.edges) {
+                keys.add(i < j ? `${i}_${j}` : `${j}_${i}`);
+            }
+        }
+        return keys;
+    }
+
+    // Per-edge data for the decomposition renderer: for every edge claimed by
+    // some group, store its canonical (i, j) and the circular-mean hue of all
+    // groups that contain it. For non-overlapping decompositions this is just
+    // the unique group's hue. For overlapping ones (notably the 600-cell's 25
+    // inscribed 24-cells, where every edge is in exactly 2 cells), this gives
+    // a stable averaged color rather than relying on draw order.
+    function buildCoveredEdgeData(decomp) {
+        const map = new Map();
+        for (const group of decomp.groups) {
+            for (const [i, j] of group.edges) {
+                const a = Math.min(i, j), b = Math.max(i, j);
+                const key = `${a}_${b}`;
+                let entry = map.get(key);
+                if (!entry) {
+                    entry = { i: a, j: b, contributingHues: [] };
+                    map.set(key, entry);
+                }
+                entry.contributingHues.push(group.hue);
+            }
+        }
+        for (const entry of map.values()) {
+            entry.hue = circularMeanOfHues(entry.contributingHues);
+        }
+        return map;
+    }
+
+    function buildDecompVertexHues(decomp, vertCount) {
+        const hues = new Array(vertCount).fill(-1);
+        const membership = Array.from({ length: vertCount }, () => []);
+        for (let g = 0; g < decomp.groups.length; g++) {
+            for (const idx of decomp.groups[g].vertexIndices) {
+                membership[idx].push(decomp.groups[g].hue);
+            }
+        }
+        for (let i = 0; i < vertCount; i++) {
+            if (membership[i].length > 0) {
+                hues[i] = circularMeanOfHues(membership[i]);
+            }
+        }
+        return hues;
+    }
+
+    function edgesWithinAtSqDist(verts, vertexIndices, targetDistSq, tol = 0.01) {
+        const edges = [];
+        for (let i = 0; i < vertexIndices.length; i++) {
+            for (let j = i + 1; j < vertexIndices.length; j++) {
+                const a = vertexIndices[i], b = vertexIndices[j];
+                if (Math.abs(squaredDist4D(verts[a], verts[b]) - targetDistSq) < tol) {
+                    edges.push([a, b]);
+                }
+            }
+        }
+        return edges;
+    }
+
+    function build24CellDecompositions(verts) {
+        const trialityGroups = [[], [], []];
+        verts.forEach((v, idx) => trialityGroups[getTrialityGroup(v)].push(idx));
+
+        const trialityEdges = trialityGroups.map(g => edgesWithinAtSqDist(verts, g, 4));
+
+        const sixteenVerts = trialityGroups[0];
+        const tessVerts = [...trialityGroups[1], ...trialityGroups[2]];
+        const sixteenEdges = trialityEdges[0];
+        const tessEdges = edgesWithinAtSqDist(verts, tessVerts, 2);
+
+        const threeTessVerts = [];
+        const threeTessEdges = [];
+        for (let excl = 0; excl < 3; excl++) {
+            const inc = [];
+            for (let other = 0; other < 3; other++) {
+                if (other !== excl) inc.push(...trialityGroups[other]);
+            }
+            threeTessVerts.push(inc);
+            threeTessEdges.push(edgesWithinAtSqDist(verts, inc, 2));
+        }
+
+        return {
+            'triality': {
+                name: 'Triality (3 × 16-cell)',
+                overlapping: false,
+                groups: [
+                    { hue: 0,   name: 'Red 16-cell',   vertexIndices: trialityGroups[0], edges: trialityEdges[0] },
+                    { hue: 120, name: 'Green 16-cell', vertexIndices: trialityGroups[1], edges: trialityEdges[1] },
+                    { hue: 240, name: 'Blue 16-cell',  vertexIndices: trialityGroups[2], edges: trialityEdges[2] }
+                ]
+            },
+            '16+tess': {
+                name: '16-cell + Tesseract',
+                overlapping: false,
+                groups: [
+                    { hue: 0,   name: '16-cell',   vertexIndices: sixteenVerts, edges: sixteenEdges },
+                    { hue: 180, name: 'Tesseract', vertexIndices: tessVerts,    edges: tessEdges }
+                ]
+            },
+            '3tess': {
+                name: '3 × Tesseract (overlapping)',
+                overlapping: true,
+                groups: [
+                    { hue: 0,   name: 'Tesseract A', vertexIndices: threeTessVerts[0], edges: threeTessEdges[0] },
+                    { hue: 120, name: 'Tesseract B', vertexIndices: threeTessVerts[1], edges: threeTessEdges[1] },
+                    { hue: 240, name: 'Tesseract C', vertexIndices: threeTessVerts[2], edges: threeTessEdges[2] }
+                ]
+            }
+        };
+    }
+
+    function buildTesseractDecompositions(verts) {
+        const even = [], odd = [];
+        verts.forEach((v, idx) => {
+            const minusCount = v.filter(c => c < 0).length;
+            (minusCount % 2 === 0 ? even : odd).push(idx);
+        });
+
+        return {
+            '2x16cell': {
+                name: '2 × 16-cell (alternating)',
+                overlapping: false,
+                groups: [
+                    { hue: 30,  name: '16-cell (even parity)', vertexIndices: even, edges: edgesWithinAtSqDist(verts, even, 8) },
+                    { hue: 210, name: '16-cell (odd parity)',  vertexIndices: odd,  edges: edgesWithinAtSqDist(verts, odd, 8) }
+                ]
+            }
+        };
+    }
+
+    function build16CellDecompositions(verts) {
+        const positive = [0, 2, 4, 6];
+        const negative = [1, 3, 5, 7];
+
+        const allPairs = (indices) => {
+            const e = [];
+            for (let i = 0; i < indices.length; i++)
+                for (let j = i + 1; j < indices.length; j++)
+                    e.push([indices[i], indices[j]]);
+            return e;
+        };
+
+        return {
+            '2tet': {
+                name: '2 × Tetrahedron (inscribed)',
+                overlapping: false,
+                groups: [
+                    { hue: 60,  name: 'Tetrahedron (+axes)', vertexIndices: positive, edges: allPairs(positive) },
+                    { hue: 240, name: 'Tetrahedron (−axes)', vertexIndices: negative, edges: allPairs(negative) }
+                ]
+            }
+        };
+    }
+
+    function build288CellDecompositions(verts) {
+        // The natural decomposition is the construction itself: the two inscribed
+        // 24-cells (F₄'s long-root 24-cell and the scaled short-root 24-cell).
+        // Vertex A: original 24-cell, exactly two coords are ±1, rest zero.
+        // Vertex B: scaled dual 24-cell, either one coord is ±√2 or all four are ±√2/2.
+        const groupA = [], groupB = [];
+        verts.forEach((v, idx) => {
+            const isUnitPair = v.every(c => Math.abs(c) < 0.01 || Math.abs(Math.abs(c) - 1) < 0.01);
+            (isUnitPair ? groupA : groupB).push(idx);
+        });
+
+        // Both 24-cells have edges at squared distance 2 in this shared-radius scaling.
+        const edgesA = edgesWithinAtSqDist(verts, groupA, 2);
+        const edgesB = edgesWithinAtSqDist(verts, groupB, 2);
+
+        return {
+            '2x24cell': {
+                name: '2 × 24-cell (F₄ roots)',
+                overlapping: false,
+                groups: [
+                    { hue: 0,   name: '24-cell A (long roots)',           vertexIndices: groupA, edges: edgesA },
+                    { hue: 180, name: '24-cell B (short roots, scaled)', vertexIndices: groupB, edges: edgesB }
+                ]
+            }
+        };
+    }
+
+    function build600CellDecompositions(verts) {
+        // The 600-cell contains 25 inscribed 24-cells, arranged in a 5×5 array.
+        // Construction (Conway/Coxeter): treat the 120 vertices as the binary
+        // icosahedral group 2I ⊂ ℍ. The first 24 vertices (our 8 axis + 16
+        // corner generators) form the binary tetrahedral subgroup 2T. Pick an
+        // icosian g of order 10 (any snub vertex with real part φ/2 works; we
+        // use verts[24]); g acts on 2I with g^5 = -1 ∈ 2T, so the 5 powers
+        // g^0..g^4 give 5 distinct coset reps. The 25 inscribed 24-cells are
+        //     C(i,j) = g^i · 2T · g^(-j)   for 0 ≤ i, j ≤ 4
+        // Each row (fixed i) and each column (fixed j) is a partition of the
+        // 120 vertices into 5 disjoint 24-cells, giving 10 such partitions.
+        //
+        // Inscribed-24-cell edges sit at squared distance 1 between 600-cell
+        // vertices — these are NOT 600-cell edges (which are at 1/φ²), so the
+        // decomposition draws on a separate layer above the 600-cell's own
+        // edges. Each of the 1200 inscribed-24-cell edges appears in exactly
+        // 2 of the 25 cells (a clean 2-multiplicity structure).
+        const standardCell = [];
+        for (let k = 0; k < 24; k++) standardCell.push(k);
+        const phi = (1 + Math.sqrt(5)) / 2;
+
+        const g = verts[24];
+        const gPow = [[1, 0, 0, 0]];
+        for (let k = 1; k < 5; k++) gPow.push(quatMul(gPow[k - 1], g));
+        const gInvPow = gPow.map(quatConj);
+
+        // Nearest-vertex lookup. The transformed quaternions are always in 2I
+        // (closed under multiplication), so the nearest vertex is the exact
+        // match up to floating-point error.
+        function findIdx(q) {
+            let best = -1, bestD = Infinity;
+            for (let k = 0; k < verts.length; k++) {
+                const d = squaredDist4D(verts[k], q);
+                if (d < bestD) { bestD = d; best = k; }
+            }
+            return best;
+        }
+
+        // Build the 5×5 array of inscribed 24-cells (vertex indices)
+        const cellVerts = [];
+        for (let i = 0; i < 5; i++) {
+            for (let j = 0; j < 5; j++) {
+                const set = new Set();
+                for (const aIdx of standardCell) {
+                    const q = quatMul(quatMul(gPow[i], verts[aIdx]), gInvPow[j]);
+                    set.add(findIdx(q));
+                }
+                cellVerts.push([...set]);
+            }
+        }
+
+        // Edges of each 24-cell: vertex pairs at squared distance 1 within it.
+        const cellEdges = cellVerts.map(idxs => edgesWithinAtSqDist(verts, idxs, 1));
+
+        // Build the two decompositions
+        //
+        // (1) Partition: row 0 of the array gives 5 disjoint 24-cells covering
+        //     all 120 vertices. 5 evenly-spaced hues.
+        const partitionGroups = [];
+        for (let j = 0; j < 5; j++) {
+            partitionGroups.push({
+                hue: j * 72,
+                name: `24-cell ${j + 1}/5`,
+                vertexIndices: cellVerts[0 * 5 + j],
+                edges: cellEdges[0 * 5 + j]
+            });
+        }
+
+        // (2) All 25, overlapping. 25 evenly-spaced hues (14.4° apart).
+        const allGroups = [];
+        for (let i = 0; i < 5; i++) {
+            for (let j = 0; j < 5; j++) {
+                const k = i * 5 + j;
+                allGroups.push({
+                    hue: (k * 360) / 25,
+                    name: `24-cell (${i},${j})`,
+                    vertexIndices: cellVerts[k],
+                    edges: cellEdges[k]
+                });
+            }
+        }
+
+        // The H4 orbit decomposition: the 600-cell's 120 vertices split
+        // canonically into the 24-cell (binary tetrahedral group 2T, the first
+        // 24 vertices: 8 axis + 16 corner) and the snub 24-cell (the remaining
+        // 96 snub icosians). This is the same split that, scaled by φ, makes
+        // up half of the E8 root system in the icosian construction.
+        //
+        // The 24-cell's 96 edges sit at sqDist 1 (not 600-cell native edges -
+        // chords across two 600-cell edges). The snub 24-cell's 432 edges sit
+        // at sqDist 1/φ² and are exactly 432 of the 600-cell's 720 native
+        // edges, so they'll show as covered by the decomposition. The other
+        // 288 native edges - the snub-to-24-cell connections - remain
+        // uncovered and render as ordinary 600-cell edges.
+        const tetraIndices = [];
+        for (let k = 0; k < 24; k++) tetraIndices.push(k);
+        const snubIndices = [];
+        for (let k = 24; k < 120; k++) snubIndices.push(k);
+        const orbitSplitGroups = [
+            {
+                hue: 210,
+                name: '24-cell (binary tetrahedral 2T)',
+                vertexIndices: tetraIndices,
+                edges: edgesWithinAtSqDist(verts, tetraIndices, 1)
+            },
+            {
+                hue: 30,
+                name: 'snub 24-cell (96 snub icosians)',
+                vertexIndices: snubIndices,
+                edges: edgesWithinAtSqDist(verts, snubIndices, 1 / (phi * phi))
+            }
+        ];
+
+        return {
+            '24+snub24': {
+                name: '24-cell + snub 24-cell (H4 orbit split)',
+                overlapping: false,
+                groups: orbitSplitGroups
+            },
+            '5x24cell': {
+                name: '5 × 24-cell (disjoint partition)',
+                overlapping: false,
+                groups: partitionGroups
+            },
+            '25x24cell': {
+                name: '25 × 24-cell (all inscribed)',
+                overlapping: true,
+                groups: allGroups
+            }
+        };
+    }
+
+    // --- 120-cell decompositions ---
+    //
+    // Two vertex partitions of the 120-cell's 600 vertices, both precomputed
+    // offline (the 5-cell partition is an exact-cover search that takes several
+    // seconds - far too slow to run live - while the 600-cell partition, though
+    // fast via orthogonal-frame rotations, is embedded here too for simplicity
+    // and consistency). The index arrays refer to the vertex order produced by
+    // create120CellVertices / generateOrbit, which is deterministic; a runtime
+    // check below validates the data against the actual coordinates and skips
+    // the decompositions if the ordering ever changes.
+    //
+    //   5 × 600-cell: the dual statement to the 600-cell's "25 inscribed
+    //     24-cells" - five disjoint inscribed 600-cells, each rotated into the
+    //     120-cell by an orthogonal frame, together covering all 600 vertices.
+    //   120 × 5-cell: the regular compound of 120 disjoint 5-cells (the
+    //     {3,3,3} simplices whose convex hull tiling underlies the 120-cell).
+    //     Each 5-cell takes exactly one vertex from each of the five 600-cells.
+    function build120CellDecompositions(verts) {
+        const CELLS600 = [[0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,25,26,28,31,32,35,37,38,41,42,44,47,48,51,53,54,57,58,60,63,64,67,69,70,73,74,76,79,80,83,85,86,88,91,93,94,97,98,100,103,104,107,109,110,113,114,116,119,120,123,125,126,129,130,132,135,136,139,141,142,145,146,148,151,152,155,157,158,161,162,164,167,168,171,173,174,177,178,180,183,184,187,189,190,193,194,196,199,200,203,205,206,209,210,212,215],[24,39,45,50,62,65,75,84,90,101,108,115,121,134,143,144,159,160,169,182,188,195,202,213,217,222,225,230,233,238,242,245,249,254,256,263,264,271,274,277,281,286,289,294,296,303,306,309,314,317,323,324,328,335,336,343,346,349,354,357,363,364,369,374,379,380,384,391,393,398,403,404,409,414,417,422,424,428,435,439,445,447,448,450,459,463,464,468,475,476,483,484,489,491,500,502,506,510,513,517,522,525,530,533,536,538,549,551,558,559,560,561,572,573,578,579,584,585,598,599],[27,36,46,49,61,66,72,87,89,102,111,112,122,133,140,147,156,163,170,181,191,192,201,214,216,223,224,231,232,239,243,244,250,253,259,260,267,268,275,276,282,285,290,293,299,300,307,308,315,316,322,325,329,334,337,342,345,350,353,358,360,367,368,375,376,383,387,388,394,397,402,405,410,413,418,421,427,431,432,436,444,446,449,451,456,460,467,471,472,479,480,487,488,490,501,503,505,509,514,518,521,526,529,534,537,539,548,550,556,557,562,563,574,575,576,577,586,587,596,597],[29,34,40,55,59,68,78,81,95,96,105,118,124,131,138,149,154,165,172,179,185,198,207,208,219,220,227,228,235,236,241,246,248,255,258,261,266,269,273,278,280,287,288,295,298,301,305,310,312,319,321,326,330,333,339,340,347,348,352,359,361,366,370,373,378,381,385,390,395,396,400,407,411,412,419,420,425,429,434,438,440,442,453,455,458,462,465,469,473,478,481,486,492,494,497,499,507,511,512,516,520,527,528,535,541,543,544,546,554,555,564,565,568,569,582,583,588,589,594,595],[30,33,43,52,56,71,77,82,92,99,106,117,127,128,137,150,153,166,175,176,186,197,204,211,218,221,226,229,234,237,240,247,251,252,257,262,265,270,272,279,283,284,291,292,297,302,304,311,313,318,320,327,331,332,338,341,344,351,355,356,362,365,371,372,377,382,386,389,392,399,401,406,408,415,416,423,426,430,433,437,441,443,452,454,457,461,466,470,474,477,482,485,493,495,496,498,504,508,515,519,523,524,531,532,540,542,545,547,552,553,566,567,570,571,580,581,590,591,592,593]];
+        const CELLS5 = [[0,263,292,429,529],[1,256,295,426,534],[2,328,329,406,407],[3,330,331,404,405],[4,464,469,571,574],[5,244,301,422,540],[6,325,327,384,385],[7,324,326,386,387],[8,314,318,394,395],[9,315,319,392,393],[10,251,308,455,513],[11,252,305,444,506],[12,340,342,377,379],[13,341,343,376,378],[14,336,338,381,383],[15,443,445,512,518],[16,219,285,470,579],[17,413,423,538,544],[18,352,354,371,375],[19,353,355,370,374],[20,346,350,361,365],[21,347,351,360,364],[22,344,348,363,367],[23,345,349,362,366],[24,69,390,431,515],[25,33,258,271,300],[26,34,257,268,303],[27,48,335,581,588],[28,55,332,578,587],[29,37,262,267,296],[30,38,261,264,299],[31,39,260,265,298],[32,71,322,554,585],[35,52,400,447,537],[36,51,403,440,542],[40,44,253,286,291],[41,66,396,415,533],[42,46,255,284,289],[43,85,358,476,528],[45,64,313,563,582],[47,84,373,441,490],[49,53,248,283,294],[50,57,399,420,526],[54,59,316,552,573],[56,58,243,278,309],[60,62,241,276,311],[61,63,240,277,310],[65,67,246,275,304],[68,70,245,272,307],[72,73,221,230,235],[74,75,220,231,234],[76,77,223,228,233],[78,79,222,229,232],[80,81,217,226,239],[82,83,216,227,238],[86,87,218,225,236],[88,214,463,485,499],[89,215,462,484,498],[90,212,461,487,497],[91,213,460,486,496],[92,210,459,481,503],[93,211,458,480,502],[94,208,457,483,501],[95,209,456,482,500],[96,206,471,477,491],[97,181,237,288,369],[98,201,323,452,520],[99,205,468,478,488],[100,202,467,473,495],[101,203,466,472,494],[102,200,465,475,493],[103,204,321,449,525],[104,195,339,532,577],[105,196,418,519,558],[106,199,417,516,557],[107,198,416,517,556],[108,187,372,425,597],[109,165,259,306,320],[110,197,337,530,583],[111,171,279,280,398],[112,189,411,510,567],[113,188,410,511,566],[114,191,409,508,565],[115,190,408,509,564],[116,176,274,287,397],[117,184,414,507,562],[118,193,368,435,591],[119,186,412,505,560],[120,160,269,282,401],[121,178,446,535,580],[122,183,380,419,553],[123,185,247,290,317],[124,177,382,421,559],[125,182,442,531,576],[126,207,224,254,356],[127,167,266,281,402],[128,194,242,293,312],[129,170,454,527,572],[130,169,453,524,575],[131,173,388,474,489],[132,175,451,522,569],[133,174,450,523,568],[134,168,389,479,492],[135,172,448,521,570],[136,159,437,550,595],[137,158,436,551,594],[138,157,439,548,593],[139,156,438,549,592],[140,155,433,546,599],[141,154,432,547,598],[142,163,357,504,555],[143,152,434,545,596],[144,180,250,297,333],[145,166,428,543,586],[146,192,270,273,391],[147,164,430,541,584],[148,153,359,514,561],[149,162,424,539,590],[150,161,427,536,589],[151,179,249,302,334]];
+
+        const phi = (1 + Math.sqrt(5)) / 2;
+        const SQ_600 = 2 / (phi * phi);   // inscribed 600-cell edge sqDist (≈0.764)
+        const SQ_5   = 5;                  // inscribed 5-cell edge sqDist
+
+        // Validate embedded data against the live vertex coordinates. If the
+        // vertex ordering has changed, the indices would be meaningless, so we
+        // bail out rather than draw nonsense.
+        function dataValid() {
+            if (CELLS600.length !== 5 || CELLS600.some(c => c.length !== 120)) return false;
+            if (CELLS5.length !== 120 || CELLS5.some(c => c.length !== 5)) return false;
+            const seen = new Set();
+            for (const cell of CELLS5) {
+                for (const idx of cell) {
+                    if (idx < 0 || idx >= verts.length || seen.has(idx)) return false;
+                    seen.add(idx);
+                }
+                for (let a = 0; a < 5; a++)
+                    for (let b = a + 1; b < 5; b++)
+                        if (Math.abs(squaredDist4D(verts[cell[a]], verts[cell[b]]) - SQ_5) > 0.01) return false;
+            }
+            return seen.size === verts.length;
+        }
+        if (!dataValid()) {
+            console.warn('120-cell partition data does not match current vertex ordering; decompositions disabled.');
+            return {};
+        }
+
+        // 5 disjoint 600-cells. Internal 600-cell edges (720 each, 3600 total)
+        // are intentionally omitted - drawing them every frame is heavy and the
+        // five-way vertex coloring already shows the partition. The 120-cell's
+        // own edges remain visible (greyed, or hex-colored when hex is on).
+        const groups600 = CELLS600.map((idxs, k) => ({
+            hue: k * 72,
+            name: `600-cell ${k + 1}/5`,
+            vertexIndices: idxs,
+            edges: []
+        }));
+
+        // 120 disjoint regular 5-cells. Each is a complete K5 (all 10 vertex
+        // pairs at sqDist 5), drawn in a hue stepping around the wheel.
+        const groups5 = CELLS5.map((idxs, k) => ({
+            hue: (k * 360) / 120,
+            name: `5-cell ${k + 1}/120`,
+            vertexIndices: idxs,
+            edges: edgesWithinAtSqDist(verts, idxs, SQ_5)
+        }));
+
+        return {
+            '5x600cell':  { name: '5 × 600-cell (disjoint partition)',  overlapping: false, groups: groups600 },
+            '120x5cell':  { name: '120 × 5-cell (disjoint partition)',  overlapping: false, groups: groups5 }
+        };
+    }
+
+
+    // =========================================================================
+    // Lattice Geometry
+    // =========================================================================
+
+    function getLatticeOffsets() {
+        if (!latticeMode || !polytope.tiles) return [[0, 0, 0, 0]];
+        return AXIS_LATTICE_OFFSETS;
+    }
+
+    function rebuildLatticeGeometry() {
+        const offsets = getLatticeOffsets();
+        const baseVerts = polytope.vertices;
+        const baseEdges = polytope.edges;
+        const n = baseVerts.length;
+
+        const verts = [];
+        const vertexLattice = [];
+        for (let k = 0; k < offsets.length; k++) {
+            const o = offsets[k];
+            for (const v of baseVerts) {
+                verts.push([v[0] + o[0], v[1] + o[1], v[2] + o[2], v[3] + o[3]]);
+                vertexLattice.push(k);
+            }
+        }
+
+        const edges = [];
+        for (let k = 0; k < offsets.length; k++) {
+            const base = k * n;
+            for (const [i, j] of baseEdges) edges.push([base + i, base + j]);
+        }
+
+        let vertexClassifications = null;
+        if (polytope.vertexClassifications) {
+            vertexClassifications = [];
+            for (let k = 0; k < offsets.length; k++) {
+                vertexClassifications.push(...polytope.vertexClassifications);
+            }
+        }
+
+        latticeGeometry = { verts, edges, vertexLattice, vertexClassifications, baseVertexCount: n };
+    }
+
+    // =========================================================================
+    // Drawing
+    // =========================================================================
+
+    function addArcToPath(p1_4d, p2_4d, offsetX, eyeOffset) {
+        const len1 = Math.sqrt(p1_4d[0]**2 + p1_4d[1]**2 + p1_4d[2]**2 + p1_4d[3]**2);
+        const len2 = Math.sqrt(p2_4d[0]**2 + p2_4d[1]**2 + p2_4d[2]**2 + p2_4d[3]**2);
+        const n1 = [p1_4d[0]/len1, p1_4d[1]/len1, p1_4d[2]/len1, p1_4d[3]/len1];
+        const n2 = [p2_4d[0]/len2, p2_4d[1]/len2, p2_4d[2]/len2, p2_4d[3]/len2];
+        const dot = n1[0]*n2[0] + n1[1]*n2[1] + n1[2]*n2[2] + n1[3]*n2[3];
+        const theta = Math.acos(Math.max(-1, Math.min(1, dot)));
+
+        if (theta < 0.01 || theta > Math.PI - 0.01) {
+            const a = project3Dto2D(project4Dto3D(p1_4d), eyeOffset);
+            const b = project3Dto2D(project4Dto3D(p2_4d), eyeOffset);
+            ctx.moveTo(offsetX + a.x, CENTER_Y + a.y);
+            ctx.lineTo(offsetX + b.x, CENTER_Y + b.y);
+            return;
+        }
+
+        const sinTheta = Math.sin(theta);
+        for (let k = 0; k <= SPHERE_ARC_SEGMENTS; k++) {
+            const t = k / SPHERE_ARC_SEGMENTS;
+            const s1 = Math.sin((1 - t) * theta) / sinTheta;
+            const s2 = Math.sin(t * theta) / sinTheta;
+            const pt = [
+                (s1 * n1[0] + s2 * n2[0]) * len1,
+                (s1 * n1[1] + s2 * n2[1]) * len1,
+                (s1 * n1[2] + s2 * n2[2]) * len1,
+                (s1 * n1[3] + s2 * n2[3]) * len1
+            ];
+            const proj = project3Dto2D(project4Dto3D(pt), eyeOffset);
+            if (k === 0) ctx.moveTo(offsetX + proj.x, CENTER_Y + proj.y);
+            else         ctx.lineTo(offsetX + proj.x, CENTER_Y + proj.y);
+        }
+    }
+
+    function activeDecomposition() {
+        if (decompositionMode === 'off') return null;
+        return polytope.decompositions[decompositionMode] || null;
+    }
+
+    function drawEye(frame, offsetX, eyeOffset, eyeSide) {
+        const { verts3D, edges, sortedFaces, transformedVerts, vertexLattice, vertexClassifications } = frame;
+
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(eyeSide === 'left' ? 0 : 600, 0, 600, canvas.height);
+        ctx.clip();
+
+        const projected2D = verts3D.map(v => project3Dto2D(v, eyeOffset));
+
+        if (trailEnabled && trailHistory.length > 1) {
+            drawTrails(eyeSide, offsetX);
+        }
+
+        const facesRendered = sortedFaces !== null && drawCellFaces(sortedFaces, projected2D, offsetX);
+
+        drawEdgesBatched(edges, verts3D, projected2D, transformedVerts, vertexClassifications,
+                         vertexLattice, offsetX, eyeOffset, eyeSide, facesRendered);
+
+        const decomp = activeDecomposition();
+        if (decomp) {
+            drawDecompositionEdges(decomp, transformedVerts, verts3D, projected2D, offsetX, eyeOffset);
+        }
+
+        if (axesViewEnabled) {
+            drawAxesView(offsetX, eyeOffset);
+        }
+
+        drawVertices(verts3D, projected2D, transformedVerts, vertexClassifications, eyeSide, offsetX);
+
+        ctx.restore();
+    }
+
+    function drawTrails(eyeSide, offsetX) {
+        for (let frameIdx = 0; frameIdx < trailHistory.length; frameIdx++) {
+            const histFrame = trailHistory[frameIdx];
+            const age = trailHistory.length - frameIdx - 1;
+            const opacity = Math.max(0, 1 - age / MAX_TRAIL_LENGTH) * 0.3;
+            const trailPts = eyeSide === 'left' ? histFrame.leftProjected : histFrame.rightProjected;
+            for (let vIdx = 0; vIdx < trailPts.length; vIdx++) {
+                const p = trailPts[vIdx];
+                if (p.behind) continue;
+                const hue = wToHue(histFrame.vertices[vIdx][3]);
+                ctx.fillStyle = `hsla(${hue}, 100%, 50%, ${opacity})`;
+                ctx.beginPath();
+                ctx.arc(offsetX + p.x, CENTER_Y + p.y, EDGE_THICKNESS * 0.8, 0, Math.PI * 2);
+                ctx.fill();
+            }
+        }
+    }
+
+    function drawCellFaces(sortedFaces, projected2D, offsetX) {
+        if (sortedFaces.length === 0) return false;
+        let anyDrawn = false;
+        for (const face of sortedFaces) {
+            let anyBehind = false;
+            for (const idx of face.vertices) {
+                if (projected2D[idx].behind) { anyBehind = true; break; }
+            }
+            if (anyBehind) continue;
+
+            ctx.fillStyle = `hsla(${face.cell.hue}, 100%, 50%, 0.12)`;
+            ctx.strokeStyle = `hsla(${face.cell.hue}, 100%, 50%, 0.25)`;
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            for (let i = 0; i < face.vertices.length; i++) {
+                const p = projected2D[face.vertices[i]];
+                if (i === 0) ctx.moveTo(offsetX + p.x, CENTER_Y + p.y);
+                else         ctx.lineTo(offsetX + p.x, CENTER_Y + p.y);
+            }
+            ctx.closePath();
+            ctx.fill();
+            ctx.stroke();
+            anyDrawn = true;
+        }
+        return anyDrawn;
+    }
+
+    // Hybrid edge renderer: center polytope edges get per-edge gradient strokes (small
+    // count, ~24-96 edges; gradient preserves smooth color transitions along the edge),
+    // lattice neighbor edges get bucketed flat-color strokes (large count, would be slow
+    // with gradients; flat is visually fine since they're already dimmed).
+    //
+    // Edge-coloring policy:
+    // - Axes view active: everything grayed (axes themselves take focus).
+    // - Decomposition active + lattice edge: grayed (lattice fades during decomp).
+    // - Decomposition active + central polytope edge:
+    //     - Covered by some decomp group: skip entirely (the decomp draws it).
+    //     - Not covered, hex on: hex-color it (S³-position info is independent
+    //       of decomp-group info, and there's no visual conflict).
+    //     - Not covered, hex off: gray (current decomp-emphasis behavior).
+    // - Otherwise: normal color (hex if on, else wToHue).
+    function drawEdgesBatched(edges, verts3D, projected2D, transformedVerts, vertexClassifications,
+                              vertexLattice, offsetX, eyeOffset, eyeSide, facesRendered) {
+        const isLatticeOn = latticeMode && polytope.tiles;
+        const decomp = activeDecomposition();
+        const decompActive = decomp !== null;
+        const coveredEdges = decompActive ? decomp.coveredEdgeKeys : null;
+
+        const buckets = new Map();
+        const centerEdges = [];
+
+        for (let edgeIdx = 0; edgeIdx < edges.length; edgeIdx++) {
+            const [i, j] = edges[edgeIdx];
+            const isLatticeEdge = isLatticeOn && (vertexLattice[i] !== 0 || vertexLattice[j] !== 0);
+
+            // Per-edge gray/skip decision (see policy comment above).
+            let useGray;
+            if (axesViewEnabled) {
+                useGray = true;
+            } else if (decompActive) {
+                if (isLatticeEdge) {
+                    useGray = true;
+                } else {
+                    const key = i < j ? `${i}_${j}` : `${j}_${i}`;
+                    if (coveredEdges.has(key)) continue;
+                    useGray = !hexachromaticMode;
+                }
+            } else {
+                useGray = false;
+            }
+
+            // For color sampling we want the 4D coords AT THE ACTUAL RENDERED
+            // ENDPOINTS, not at the original (possibly off-screen) vertices.
+            // In sphere mode no clipping happens; otherwise clipEdgeToNearPlane
+            // returns interpolated 4D coords whenever it clips.
+            let p1, p2, v1_4d_used, v2_4d_used;
+            if (sphereMode) {
+                p1 = projected2D[i];
+                p2 = projected2D[j];
+                v1_4d_used = transformedVerts[i];
+                v2_4d_used = transformedVerts[j];
+            } else {
+                const clipped = clipEdgeToNearPlane(verts3D[i], verts3D[j],
+                                                   projected2D[i], projected2D[j], eyeOffset,
+                                                   transformedVerts[i], transformedVerts[j]);
+                if (!clipped) continue;
+                p1 = clipped.p1;
+                p2 = clipped.p2;
+                v1_4d_used = clipped.v1_4d;
+                v2_4d_used = clipped.v2_4d;
+            }
+
+            let c1 = null, c2 = null;
+            if (!useGray) {
+                c1 = hueForEndpoint(v1_4d_used, vertexClassifications?.[i], eyeSide);
+                c2 = hueForEndpoint(v2_4d_used, vertexClassifications?.[j], eyeSide);
+            }
+
+            const latticeOpacity = isLatticeEdge ? 0.3 : 1.0;
+            const baseOpacity = facesRendered
+                ? 0.4
+                : 0.3 + 0.7 * (1 - (p1.y + p2.y) / 2 / 200);
+            const opacity = baseOpacity * latticeOpacity * (useGray ? 0.3 : 1.0);
+            if (opacity < MIN_VISIBLE_ALPHA) continue;
+
+            if (isLatticeEdge) {
+                // Average the two endpoint colors for the bucket key. Uses
+                // vector-based blending so the result doesn't jump when the
+                // two endpoint hues rotate past 180° apart (the linear
+                // short-way average is discontinuous there); near-antipodal
+                // pairs fade to white via the same coherence formula as the
+                // hex-mode pole fade.
+                const blend = useGray ? { hue: 0, sat: 0, light: 0 } : blendColors(c1, c2);
+                const blendedHue   = blend.hue;
+                const blendedSat   = blend.sat;
+                const blendedLight = blend.light;
+                const opaB = Math.round(opacity * ALPHA_BUCKET_LEVELS) / ALPHA_BUCKET_LEVELS;
+                const hueB   = useGray ? 0 : Math.round(blendedHue / HUE_BUCKET_DEG) * HUE_BUCKET_DEG;
+                const satB   = useGray ? 0 : Math.round(blendedSat * 10) / 10;
+                const lightB = useGray ? 0 : Math.round(blendedLight * 10) / 10;
+                const key = useGray ? `g${opaB}` : `${hueB}_${satB}_${lightB}_${opaB}`;
+                let bucket = buckets.get(key);
+                if (!bucket) {
+                    bucket = {
+                        isGray: useGray, hue: hueB, sat: satB, light: lightB, opacity: opaB,
+                        segments: sphereMode ? null : [],
+                        arcs: sphereMode ? [] : null
+                    };
+                    buckets.set(key, bucket);
+                }
+                if (sphereMode) bucket.arcs.push(v1_4d_used, v2_4d_used);
+                else            bucket.segments.push(p1.x, p1.y, p2.x, p2.y);
+            } else {
+                centerEdges.push({
+                    p1, p2, c1, c2, opacity, useGray,
+                    v1_4d: v1_4d_used, v2_4d: v2_4d_used,
+                    depth: (verts3D[i][2] + verts3D[j][2]) / 2
+                });
+            }
+        }
+
+        const sortedBuckets = [...buckets.values()].sort((a, b) => a.opacity - b.opacity);
+        for (const b of sortedBuckets) {
+            ctx.strokeStyle = b.isGray
+                ? `rgba(128, 128, 128, ${b.opacity})`
+                : `hsla(${b.hue}, ${b.sat * 100}%, ${b.light * 100}%, ${b.opacity})`;
+            ctx.lineWidth = b.isGray ? EDGE_THICKNESS : EDGE_THICKNESS * 1.5;
+            ctx.beginPath();
+            if (b.arcs) {
+                for (let k = 0; k < b.arcs.length; k += 2) {
+                    addArcToPath(b.arcs[k], b.arcs[k + 1], offsetX, eyeOffset);
+                }
+            } else {
+                const s = b.segments;
+                for (let k = 0; k < s.length; k += 4) {
+                    ctx.moveTo(offsetX + s[k],     CENTER_Y + s[k + 1]);
+                    ctx.lineTo(offsetX + s[k + 2], CENTER_Y + s[k + 3]);
+                }
+            }
+            ctx.stroke();
+        }
+
+        centerEdges.sort((a, b) => a.depth - b.depth);
+        for (const e of centerEdges) {
+            if (e.useGray) {
+                ctx.strokeStyle = `rgba(128, 128, 128, ${e.opacity})`;
+                ctx.lineWidth = EDGE_THICKNESS;
+                ctx.beginPath();
+                if (sphereMode) {
+                    addArcToPath(e.v1_4d, e.v2_4d, offsetX, eyeOffset);
+                } else {
+                    ctx.moveTo(offsetX + e.p1.x, CENTER_Y + e.p1.y);
+                    ctx.lineTo(offsetX + e.p2.x, CENTER_Y + e.p2.y);
+                }
+                ctx.stroke();
+            } else if (sphereMode) {
+                const { hue, sat, light } = blendColors(e.c1, e.c2);
+                ctx.strokeStyle = `hsla(${hue}, ${sat * 100}%, ${light * 100}%, ${e.opacity})`;
+                ctx.lineWidth = EDGE_THICKNESS * 1.5;
+                ctx.beginPath();
+                addArcToPath(e.v1_4d, e.v2_4d, offsetX, eyeOffset);
+                ctx.stroke();
+            } else if (!gradientsEnabled) {
+                // Flat edge: a single hsla stroke with the blended endpoint
+                // color. Skips the per-edge gradient construction (createLinearGradient
+                // plus two addColorStop calls), which is the dominant cost on
+                // dense polytopes like the 600-cell. Loses the smooth color
+                // transition along each edge; otherwise identical. Uses the
+                // vector-based blend so the result doesn't jump when two
+                // endpoint hues rotate past 180° apart.
+                const { hue, sat, light } = blendColors(e.c1, e.c2);
+                ctx.strokeStyle = `hsla(${hue}, ${sat * 100}%, ${light * 100}%, ${e.opacity})`;
+                ctx.lineWidth = EDGE_THICKNESS * 1.5;
+                ctx.beginPath();
+                ctx.moveTo(offsetX + e.p1.x, CENTER_Y + e.p1.y);
+                ctx.lineTo(offsetX + e.p2.x, CENTER_Y + e.p2.y);
+                ctx.stroke();
+            } else {
+                const grad = ctx.createLinearGradient(
+                    offsetX + e.p1.x, CENTER_Y + e.p1.y,
+                    offsetX + e.p2.x, CENTER_Y + e.p2.y
+                );
+                grad.addColorStop(0, `hsla(${e.c1.hue}, ${e.c1.sat * 100}%, ${e.c1.light * 100}%, ${e.opacity})`);
+                grad.addColorStop(1, `hsla(${unwrapHue(e.c1.hue, e.c2.hue)}, ${e.c2.sat * 100}%, ${e.c2.light * 100}%, ${e.opacity})`);
+                ctx.strokeStyle = grad;
+                ctx.lineWidth = EDGE_THICKNESS * 1.5;
+                ctx.beginPath();
+                ctx.moveTo(offsetX + e.p1.x, CENTER_Y + e.p1.y);
+                ctx.lineTo(offsetX + e.p2.x, CENTER_Y + e.p2.y);
+                ctx.stroke();
+            }
+        }
+    }
+
+    // Decomposition edge renderer. Iterates over the union of edges (unique by
+    // canonical key) rather than per-group, using the pre-computed circular-mean
+    // hue for each edge. This gives stable results when the same edge belongs
+    // to multiple groups (notably the 600-cell's 25 24-cells, where each
+    // 24-cell edge is shared by exactly 2 inscribed 24-cells). For non-
+    // overlapping decompositions, each edge has only one contributing hue, so
+    // results match the previous per-group approach exactly.
+    //
+    // Edges are batched by quantized hue to keep stroke calls cheap even when
+    // there are many distinct averaged hues.
+    function drawDecompositionEdges(decomp, transformedVerts, verts3D, projected2D, offsetX, eyeOffset) {
+        const HUE_QUANT = 2;  // quantize hue to 2° buckets
+        const buckets = new Map();
+        for (const entry of decomp.coveredEdgeData.values()) {
+            const bucket = Math.round(entry.hue / HUE_QUANT) * HUE_QUANT;
+            let list = buckets.get(bucket);
+            if (!list) { list = []; buckets.set(bucket, list); }
+            list.push(entry);
+        }
+
+        ctx.lineWidth = EDGE_THICKNESS * 1.5;
+        for (const [hue, edges] of buckets) {
+            ctx.strokeStyle = `hsla(${hue}, 100%, 50%, 0.7)`;
+            ctx.beginPath();
+            if (sphereMode) {
+                for (const { i, j } of edges) {
+                    addArcToPath(transformedVerts[i], transformedVerts[j], offsetX, eyeOffset);
+                }
+            } else {
+                for (const { i, j } of edges) {
+                    const clipped = clipEdgeToNearPlane(verts3D[i], verts3D[j],
+                                                        projected2D[i], projected2D[j], eyeOffset,
+                                                        transformedVerts[i], transformedVerts[j]);
+                    if (!clipped) continue;
+                    ctx.moveTo(offsetX + clipped.p1.x, CENTER_Y + clipped.p1.y);
+                    ctx.lineTo(offsetX + clipped.p2.x, CENTER_Y + clipped.p2.y);
+                }
+            }
+            ctx.stroke();
+        }
+    }
+
+    function drawAxesView(offsetX, eyeOffset) {
+        for (const axis of get4DAxes()) {
+            const p1_4d = transformVertex(axis.endpoints[0]);
+            const p2_4d = transformVertex(axis.endpoints[1]);
+
+            ctx.strokeStyle = `hsla(${axis.hue}, 100%, 60%, 0.9)`;
+            ctx.lineWidth = EDGE_THICKNESS * 3;
+            ctx.beginPath();
+
+            if (sphereMode) {
+                addArcToPath(p1_4d, p2_4d, offsetX, eyeOffset);
+            } else {
+                const v1_3d = project4Dto3D(p1_4d);
+                const v2_3d = project4Dto3D(p2_4d);
+                const p1_2d = project3Dto2D(v1_3d, eyeOffset);
+                const p2_2d = project3Dto2D(v2_3d, eyeOffset);
+                const clipped = clipEdgeToNearPlane(v1_3d, v2_3d, p1_2d, p2_2d, eyeOffset,
+                                                    p1_4d, p2_4d);
+                if (clipped) {
+                    ctx.moveTo(offsetX + clipped.p1.x, CENTER_Y + clipped.p1.y);
+                    ctx.lineTo(offsetX + clipped.p2.x, CENTER_Y + clipped.p2.y);
+                }
+            }
+            ctx.stroke();
+        }
+    }
+
+    function drawVertices(verts3D, projected2D, transformedVerts, vertexClassifications, eyeSide, offsetX) {
+        const baseN = latticeGeometry.baseVertexCount;
+        const decomp = activeDecomposition();
+
+        for (let i = 0; i < projected2D.length; i++) {
+            const p = projected2D[i];
+            if (p.behind) continue;
+
+            let hue, sat = 1, light = 0.5;
+            if (hexachromaticMode || (projection3DEnabled && polytope.type === '24cell' && vertexClassifications && vertexClassifications[i])) {
+                // Reuse the central color function so vertex hue/sat/light
+                // match the surrounding edge endpoints (especially at the
+                // hexachromatic poles, where edges fade to white).
+                const c = hueForEndpoint(transformedVerts[i], vertexClassifications?.[i], eyeSide);
+                hue = c.hue; sat = c.sat; light = c.light;
+            } else if (decomp) {
+                const baseIdx = i % baseN;
+                const h = decomp.vertexHues[baseIdx];
+                hue = h >= 0 ? h : wToHue(verts3D[i][3]);
+            } else {
+                hue = wToHue(verts3D[i][3]);
+            }
+
+            const opacity = 0.5 + 0.5 * (1 - p.y / 200);
+            ctx.fillStyle = `hsla(${hue}, ${sat * 100}%, ${light * 100}%, ${opacity})`;
+            ctx.beginPath();
+            ctx.arc(offsetX + p.x, CENTER_Y + p.y, EDGE_THICKNESS * 2, 0, Math.PI * 2);
+            ctx.fill();
+        }
+    }
+
+    function buildSortedFaces(verts3D) {
+        const cellIndices = singleCellMode ? [selectedCellIndex] : polytope.cells.map((_, i) => i);
+        const allFaces = [];
+        for (const i of cellIndices) allFaces.push(...polytope.facesByCell[i]);
+        if (allFaces.length === 0) return null;
+
+        const withDepth = allFaces.map(face => {
+            const avg = face.vertices.reduce((s, idx) => s + verts3D[idx][2], 0) / face.vertices.length;
+            return { ...face, depth: avg + face.cell.hue * 0.0001 };
+        });
+        withDepth.sort((a, b) => a.depth - b.depth);
+        return withDepth;
+    }
+
+    function draw() {
+        ctx.fillStyle = '#000';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        if (projection3DEnabled) {
+            projection3DAxis = (polytope.type === '24cell') ? [1, 1, 0, 0] : [0, 0, 0, 1];
+        }
+
+        rebuildTransformMatrix();
+        const transformedVerts = latticeGeometry.verts.map(transformVertex);
+        const verts3D = transformedVerts.map(project4Dto3D);
+
+        const sortedFaces = cellHighlightEnabled ? buildSortedFaces(verts3D) : null;
+
+        if (trailEnabled) {
+            trailHistory.push({
+                vertices: verts3D.map(v => [...v]),
+                leftProjected:  verts3D.map(v => project3Dto2D(v, -STEREO_OFFSET)),
+                rightProjected: verts3D.map(v => project3Dto2D(v,  STEREO_OFFSET))
+            });
+            if (trailHistory.length > MAX_TRAIL_LENGTH) trailHistory.shift();
+        }
+
+        const frame = {
+            verts3D,
+            transformedVerts,
+            edges: latticeGeometry.edges,
+            sortedFaces,
+            vertexLattice: latticeGeometry.vertexLattice,
+            vertexClassifications: latticeGeometry.vertexClassifications
+        };
+
+        drawEye(frame, EYE_LEFT_X,  -STEREO_OFFSET, 'left');
+        drawEye(frame, EYE_RIGHT_X,  STEREO_OFFSET, 'right');
+
+        ctx.strokeStyle = '#333';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(600, 0);
+        ctx.lineTo(600, canvas.height);
+        ctx.stroke();
+
+        ctx.fillStyle = shiftPressed ? '#ff6' : '#666';
+        ctx.font = '12px Arial';
+        ctx.textAlign = 'center';
+        if (!shiftPressed) {
+            ctx.fillText('LEFT: XY (horiz) & XZ (vert)', EYE_LEFT_X, 20);
+            ctx.fillText('RIGHT: YZ (horiz) & YW (vert)', EYE_RIGHT_X, 20);
+        } else {
+            ctx.fillText('LEFT: XZ (horiz) & XW (vert) [SHIFT]', EYE_LEFT_X, 20);
+            ctx.fillText('RIGHT: YW (horiz) & ZW (vert) [SHIFT]', EYE_RIGHT_X, 20);
+        }
+        ctx.fillStyle = '#444';
+        ctx.font = '10px Arial';
+        ctx.fillText('(Hold Shift to switch)', EYE_LEFT_X, 35);
+        ctx.fillText('(Hold Shift to switch)', EYE_RIGHT_X, 35);
+    }
+
+    // =========================================================================
+    // Animation & Speed Mutation
+    // =========================================================================
+
+    function updateSpeedMutation() {
+        if (!speedMutationEnabled) return;
+
+        mutationTime += MUTATION_SPEED;
+        const timeSinceStart = mutationTime - mutationStartTime;
+        const fadeIn = Math.min(1, timeSinceStart / MUTATION_FADE_IN_DURATION);
+        const amp = MUTATION_AMPLITUDE * fadeIn;
+
+        const mutations = [
+            { axis: 'XY', freq: 1.0, phase: 0, base: baseSpeedXY },
+            { axis: 'XZ', freq: 1.3, phase: 1, base: baseSpeedXZ },
+            { axis: 'XW', freq: 0.7, phase: 2, base: baseSpeedXW },
+            { axis: 'YZ', freq: 1.1, phase: 3, base: baseSpeedYZ },
+            { axis: 'YW', freq: 0.9, phase: 4, base: baseSpeedYW },
+            { axis: 'ZW', freq: 1.2, phase: 5, base: baseSpeedZW }
+        ];
+
+        for (const m of mutations) {
+            const v = Math.max(-20, Math.min(20, m.base + Math.sin(mutationTime * m.freq + m.phase) * amp));
+            setSpeedFromSlider(m.axis, v);
+        }
+    }
+
+    function setSpeedFromSlider(axis, value) {
+        document.getElementById('speed' + axis).value = value;
+        document.getElementById('value' + axis).textContent = (value / 1000).toFixed(3);
+        switch (axis) {
+            case 'XY': speedXY = value / 1000; break;
+            case 'XZ': speedXZ = value / 1000; break;
+            case 'XW': speedXW = value / 1000; break;
+            case 'YZ': speedYZ = value / 1000; break;
+            case 'YW': speedYW = value / 1000; break;
+            case 'ZW': speedZW = value / 1000; break;
+        }
+    }
+
+    function animate() {
+        updateSpeedMutation();
+
+        if (isRotating) {
+            if (projection3DEnabled) {
+                angle3DX += speedXY;
+                angle3DY += speedXZ;
+                angle3DZ += speedZW;
+            } else {
+                angleXY += speedXY;
+                angleXZ += speedXZ;
+                angleXW += speedXW;
+                angleYZ += speedYZ;
+                angleYW += speedYW;
+                angleZW += speedZW;
+            }
+        }
+        draw();
+        requestAnimationFrame(animate);
+    }
+
+    // =========================================================================
+    // UI Handlers
+    // =========================================================================
+
+    function setToggleButton(btnId, isOn, labelBase) {
+        const btn = document.getElementById(btnId);
+        btn.textContent = `${labelBase}: ${isOn ? 'ON' : 'OFF'}`;
+        btn.classList.toggle('active', isOn);
+    }
+
+    function toggleRotation() { isRotating = !isRotating; }
+
+    function resetRotation() {
+        angleXY = angleXZ = angleXW = 0;
+        angleYZ = angleYW = angleZW = 0;
+    }
+
+    function resetSliders() {
+        const defaults = { XY: 8, XZ: 6, XW: 0, YZ: 0, YW: 0, ZW: 12 };
+        baseSpeedXY = defaults.XY; baseSpeedXZ = defaults.XZ; baseSpeedXW = defaults.XW;
+        baseSpeedYZ = defaults.YZ; baseSpeedYW = defaults.YW; baseSpeedZW = defaults.ZW;
+        for (const axis of ['XY', 'XZ', 'XW', 'YZ', 'YW', 'ZW']) {
+            setSpeedFromSlider(axis, defaults[axis]);
+        }
+    }
+
+    function stopAllRotation() {
+        if (speedMutationEnabled) {
+            speedMutationEnabled = false;
+            setToggleButton('mutationBtn', false, 'Speed Mutation');
+        }
+        baseSpeedXY = baseSpeedXZ = baseSpeedXW = 0;
+        baseSpeedYZ = baseSpeedYW = baseSpeedZW = 0;
+        for (const axis of ['XY', 'XZ', 'XW', 'YZ', 'YW', 'ZW']) {
+            setSpeedFromSlider(axis, 0);
+        }
+    }
+
+    function toggleCellHighlight() {
+        cellHighlightEnabled = !cellHighlightEnabled;
+        const legend = document.getElementById('cellLegend');
+        const singleBtn = document.getElementById('singleCellBtn');
+        if (cellHighlightEnabled) {
+            updateCellLegend();
+            legend.classList.add('active');
+            singleBtn.disabled = false;
+        } else {
+            legend.classList.remove('active');
+            singleBtn.disabled = true;
+        }
+        setToggleButton('cellHighlightBtn', cellHighlightEnabled, 'Cell Highlighting');
+    }
+
+    function toggleSingleCellMode() {
+        singleCellMode = !singleCellMode;
+        setToggleButton('singleCellBtn', singleCellMode, 'Single Cell');
+    }
+
+    function changeDecomposition() {
+        decompositionMode = document.getElementById('decompositionSelect').value;
+        const select = document.getElementById('decompositionSelect');
+        select.classList.toggle('active', decompositionMode !== 'off');
+    }
+
+    function updateDecompositionDropdown() {
+        const select = document.getElementById('decompositionSelect');
+        const decomps = polytope.decompositions || {};
+        const entries = Object.entries(decomps);
+
+        select.innerHTML = '';
+        const def = document.createElement('option');
+        def.value = 'off';
+        def.textContent = 'Decomposition: None';
+        select.appendChild(def);
+
+        for (const [id, decomp] of entries) {
+            const opt = document.createElement('option');
+            opt.value = id;
+            opt.textContent = decomp.name;
+            select.appendChild(opt);
+        }
+
+        select.value = 'off';
+        select.disabled = entries.length === 0;
+        select.classList.remove('active');
+    }
+
+    function toggleProjection3D() {
+        projection3DEnabled = !projection3DEnabled;
+        setToggleButton('projection3DBtn', projection3DEnabled, '3D Projection');
+        if (projection3DEnabled) {
+            angle3DX = 0.3;
+            angle3DY = 0.3;
+            angle3DZ = 0;
+        }
+    }
+
+    function toggleAxesView() {
+        axesViewEnabled = !axesViewEnabled;
+        setToggleButton('axesBtn', axesViewEnabled, 'Axes');
+    }
+
+    function toggleHexachromatic() {
+        hexachromaticMode = !hexachromaticMode;
+        setToggleButton('hexachromaticBtn', hexachromaticMode, 'Hexachromatic');
+    }
+
+    function toggleGradients() {
+        gradientsEnabled = !gradientsEnabled;
+        setToggleButton('gradientsBtn', gradientsEnabled, 'Gradients');
+    }
+
+    function toggleLattice() {
+        latticeMode = !latticeMode;
+        setToggleButton('latticeBtn', latticeMode, 'Lattice');
+        rebuildLatticeGeometry();
+    }
+
+    function toggleTrails() {
+        trailEnabled = !trailEnabled;
+        setToggleButton('trailsBtn', trailEnabled, 'Trails');
+        if (!trailEnabled) trailHistory = [];
+    }
+
+    function toggleProjectionMode() {
+        orthographicMode = !orthographicMode;
+        setToggleButton('projectionBtn', orthographicMode, 'Orthographic');
+    }
+
+    function toggleSphereMode() {
+        sphereMode = !sphereMode;
+        setToggleButton('sphereBtn', sphereMode, '3-Sphere View');
+    }
+
+    function toggleSpeedMutation() {
+        speedMutationEnabled = !speedMutationEnabled;
+        setToggleButton('mutationBtn', speedMutationEnabled, 'Speed Mutation');
+
+        baseSpeedXY = parseFloat(document.getElementById('speedXY').value);
+        baseSpeedXZ = parseFloat(document.getElementById('speedXZ').value);
+        baseSpeedXW = parseFloat(document.getElementById('speedXW').value);
+        baseSpeedYZ = parseFloat(document.getElementById('speedYZ').value);
+        baseSpeedYW = parseFloat(document.getElementById('speedYW').value);
+        baseSpeedZW = parseFloat(document.getElementById('speedZW').value);
+
+        if (speedMutationEnabled) mutationStartTime = mutationTime;
+    }
+
+    function changePolytope() {
+        const newType = document.getElementById('polytopeSelect').value;
+        initializePolytope(newType);
+        decompositionMode = 'off';
+        updateDecompositionDropdown();
+        if (cellHighlightEnabled) updateCellLegend();
+    }
+
+    function updateCellLegend() {
+        document.getElementById('cellLegendTitle').textContent = polytope.title;
+
+        const grid = document.getElementById('cellLegendGrid');
+        grid.innerHTML = '';
+        for (const cell of polytope.cells) {
+            const item = document.createElement('div');
+            item.className = 'cell-item';
+            const color = document.createElement('div');
+            color.className = 'cell-color';
+            color.style.background = `hsla(${cell.hue}, 100%, 50%, 0.4)`;
+            const label = document.createElement('span');
+            label.textContent = cell.name;
+            item.appendChild(color);
+            item.appendChild(label);
+            grid.appendChild(item);
+        }
+    }
+
+    // =========================================================================
+    // Event Setup
+    // =========================================================================
+
+    function setupSliders() {
+        const sliders = [
+            { id: 'speedXY', valueId: 'valueXY', set: v => { baseSpeedXY = v; speedXY = v / 1000; } },
+            { id: 'speedXZ', valueId: 'valueXZ', set: v => { baseSpeedXZ = v; speedXZ = v / 1000; } },
+            { id: 'speedXW', valueId: 'valueXW', set: v => { baseSpeedXW = v; speedXW = v / 1000; } },
+            { id: 'speedYZ', valueId: 'valueYZ', set: v => { baseSpeedYZ = v; speedYZ = v / 1000; } },
+            { id: 'speedYW', valueId: 'valueYW', set: v => { baseSpeedYW = v; speedYW = v / 1000; } },
+            { id: 'speedZW', valueId: 'valueZW', set: v => { baseSpeedZW = v; speedZW = v / 1000; } }
+        ];
+        for (const s of sliders) {
+            const el = document.getElementById(s.id);
+            const display = document.getElementById(s.valueId);
+            el.addEventListener('input', e => {
+                const v = parseFloat(e.target.value);
+                s.set(v);
+                display.textContent = (v / 1000).toFixed(3);
+            });
+        }
+    }
+
+    function setupKeyboard() {
+        document.addEventListener('keydown', e => { if (e.key === 'Shift') shiftPressed = true; });
+        document.addEventListener('keyup',   e => { if (e.key === 'Shift') shiftPressed = false; });
+    }
+
+    function setupMouse() {
+        canvas.addEventListener('mousedown', e => {
+            isDragging = true;
+            lastMouseX = e.clientX;
+            lastMouseY = e.clientY;
+        });
+
+        canvas.addEventListener('mousemove', e => {
+            if (!isDragging) return;
+            const dx = e.clientX - lastMouseX;
+            const dy = e.clientY - lastMouseY;
+
+            const rect = canvas.getBoundingClientRect();
+            const isLeftWindow = (e.clientX - rect.left) < 600;
+
+            if (projection3DEnabled) {
+                angle3DY += dx * DRAG_SENSITIVITY;
+                if (isLeftWindow) angle3DX += dy * DRAG_SENSITIVITY;
+                else              angle3DZ += dy * DRAG_SENSITIVITY;
+            } else if (isLeftWindow) {
+                if (!shiftPressed) {
+                    angleXY += dx * DRAG_SENSITIVITY;
+                    angleXZ += dy * DRAG_SENSITIVITY;
+                } else {
+                    angleXZ += dx * DRAG_SENSITIVITY;
+                    angleXW += dy * DRAG_SENSITIVITY;
+                }
+            } else {
+                if (!shiftPressed) {
+                    angleYZ += dx * DRAG_SENSITIVITY;
+                    angleYW += dy * DRAG_SENSITIVITY;
+                } else {
+                    angleYW += dx * DRAG_SENSITIVITY;
+                    angleZW += dy * DRAG_SENSITIVITY;
+                }
+            }
+
+            lastMouseX = e.clientX;
+            lastMouseY = e.clientY;
+            if (!isRotating) draw();
+        });
+
+        canvas.addEventListener('mouseup',    () => { isDragging = false; });
+        canvas.addEventListener('mouseleave', () => { isDragging = false; });
+
+        canvas.addEventListener('wheel', e => {
+            e.preventDefault();
+            scale *= (e.deltaY > 0) ? 0.95 : 1.05;
+            scale = Math.max(0.2, Math.min(5.0, scale));
+            if (!isRotating) draw();
+        });
+    }
+
+    // =========================================================================
+    // Initialization
+    // =========================================================================
+
+    initializePolytope('tesseract');
+    updateDecompositionDropdown();
+    setupSliders();
+    setupKeyboard();
+    setupMouse();
+    animate();
+    </script>
+</body>
+</html>
